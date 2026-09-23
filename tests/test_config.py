@@ -1,0 +1,37 @@
+"""Guard the agreed data-quality thresholds and project paths against silent changes.
+
+If one of these tests fails, a documented decision (docs/decision_log.md) was
+changed in code. That may be intentional, but the decision log must be updated too.
+"""
+
+from src import config
+
+
+def test_paths_live_inside_project():
+    for path in [config.RAW_DATA_PATH, config.CLEAN_DATA_PATH, config.DUCKDB_PATH,
+                 config.SQL_DIR, config.ARTIFACTS_DIR, config.FIGURES_DIR]:
+        assert config.PROJECT_ROOT in path.parents
+
+
+def test_raw_data_location_is_as_documented():
+    assert config.RAW_DATA_PATH.relative_to(config.PROJECT_ROOT).as_posix() == "data/raw/Loan_Default.csv"
+
+
+def test_expected_schema():
+    cols = config.EXPECTED_RAW_COLUMNS
+    assert len(cols) == 34
+    assert len(set(cols)) == 34, "duplicate column names in expected schema"
+    assert config.ID_COL in cols
+    assert config.TARGET_COL in cols
+    assert set(config.PRICING_COLUMNS_UNDER_INVESTIGATION) <= set(cols)
+
+
+def test_agreed_data_quality_thresholds():
+    # D-005 and D-009 in docs/decision_log.md
+    assert config.PROPERTY_VALUE_MIN_VALID == 10_000
+    assert config.RATE_OF_INTEREST_MIN_EXCLUSIVE == 0.0
+
+
+def test_hold_out_settings():
+    assert 0 < config.TEST_SIZE < 1
+    assert isinstance(config.RANDOM_SEED, int)

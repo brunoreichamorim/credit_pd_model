@@ -1,0 +1,35 @@
+# --- Data (licence does not clearly permit redistribution; see docs/decision_log.md D-002)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+*.csv
+# small result tables in artifacts/ (e.g. grade boundaries) ARE committed
+!artifacts/*.csv
+*.parquet
+*.duckdb
+*.duckdb.wal
+
+# --- Model binaries (reproducible from code; small metric/table outputs ARE committed)
+artifacts/*.joblib
+artifacts/*.pkl
+
+# --- Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- Environments and secrets
+.venv/
+venv/
+.env
+.env.*
+
+# --- Jupyter
+.ipynb_checkpoints/
+
+# --- Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
