@@ -24,10 +24,11 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 ## Decisions
 
 ### D-001 Dataset source
-- **Type:** FACT
-- **Status:** Agreed (Stage 1)
+- **Type:** FACT, once confirmed
+- **Status:** To verify (Stage 2)
 - **Decision:** The data is the *Loan Default Dataset* by Yasser H. on Kaggle (<https://www.kaggle.com/datasets/yasserh/loan-default-dataset>), file `Loan_Default.csv`, about 148,670 rows × 34 columns.
 - **Why it matters:** A PD model is only as credible as its documented data lineage. A similar Kaggle dataset (`nikhil1e9/loan-default`) has a different schema and must not be confused with this one.
+- **Why "To verify":** The repository code has not yet independently reproduced the dataset facts (row count, column count, schema). Stage 2 validates the file in code before this entry becomes FACT.
 
 ### D-002 The raw data is not committed to Git
 - **Type:** ASSUMPTION
@@ -76,7 +77,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 ### D-009 `rate_of_interest <= 0` is treated as invalid (set to missing)
 - **Type:** ASSUMPTION
 - **Status:** To verify (Stage 2)
-- **Why:** A contractual interest rate of zero or below is implausible for a commercial mortgage. About one row is affected.
+- **Why:** A contractual interest rate of zero or below is implausible for a mortgage loan. About one row is affected.
 
 ### D-010 `Upfront_charges = 0` is kept as a legitimate "no fee" value
 - **Type:** ASSUMPTION
@@ -98,11 +99,11 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Status:** Agreed (Stage 5)
 - **Why:** It outputs a probability directly. Each coefficient is readable as a change in log-odds, so its direction can be checked against credit intuition. It is stable, easy to validate and well established for PD modelling. A challenger model is optional and only comes after the baseline is complete.
 
-### D-013 Stratified random 70/30 hold-out with a fixed seed
+### D-013 Stratified 70/30 split with 5-fold cross-validation and a fixed seed
 - **Type:** MODELLING CHOICE
 - **Status:** Agreed (Stage 5)
-- **Decision:** A 70/30 split, stratified on `Status`, with `RANDOM_SEED = 42`. All learned preprocessing (imputation, scaling, encoding, binning) is fitted on the training set only, inside a scikit-learn Pipeline.
-- **Why:** Stratification keeps the default rate equal in both samples. Fitting only on the training set prevents information from the test set leaking into the model. This is **out-of-sample**, not out-of-time, validation (see D-004).
+- **Decision:** 70% development/training set, with 5-fold cross-validation performed only within the development/training set, and a 30% final hold-out test set used once for final evaluation. The split is stratified on `Status`, with `RANDOM_SEED = 42` (`TEST_SIZE = 0.30`, `CV_FOLDS = 5` in `src/config.py`). All learned preprocessing (imputation, scaling, encoding, binning) is fitted on the development/training data only, inside a scikit-learn Pipeline.
+- **Why:** Stratification keeps the default rate equal in both samples. Cross-validation inside the development/training set is used for model development without touching the hold-out test set, so the final hold-out result remains an unbiased estimate. Fitting only on development/training data prevents information from the hold-out test set leaking into the model. This is **out-of-sample**, not out-of-time, validation (see D-004).
 
 ### D-014 Risk grades are illustrative internal grades for this project
 - **Type:** MODELLING CHOICE
@@ -113,7 +114,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 ### D-015 The definition of `Status` (default) is undocumented
 - **Type:** ASSUMPTION
 - **Status:** Agreed; documented as a limitation
-- **Decision:** `Status = 1` is treated as "default" as labelled. The dataset gives no default definition (for example days past due), observation window or performance horizon.
+- **Decision:** `Status = 1` is treated as "default" as labelled. No default definition has been found in the dataset description yet; this must be confirmed against the original Kaggle dataset documentation before treating the target definition as established.
 - **Consequence:** The predicted PDs are meaningful **relative to this dataset only**. They are not comparable to a regulatory 12-month PD. The portfolio default rate of about 24.6% is far above typical mortgage-portfolio levels, which reinforces this caveat.
 
 ### D-016 Use of `Gender` (and possibly `age`) as a model feature

@@ -33,10 +33,13 @@ data/raw/Loan_Default.csv
 
 ```
 Raw CSV → data-quality checks & cleaning → Parquet → DuckDB / SQL → model dataset
-      → stratified train/test split → sklearn Pipeline (fitted on train only)
-      → logistic regression PD → validation & calibration → illustrative risk grades
-      → monitoring (PSI) → Streamlit dashboard
+      → stratified 70/30 split → sklearn Pipeline (fitted on development/training data only)
+      → logistic regression PD (5-fold CV within development/training set)
+      → final evaluation on hold-out test set → validation & calibration
+      → illustrative risk grades → monitoring (PSI) → Streamlit dashboard
 ```
+
+**Sampling design (decision [D-013](docs/decision_log.md)):** 70% development/training set, with 5-fold cross-validation performed only within the development/training set, and a 30% final hold-out test set used once for final evaluation. This is out-of-sample, not out-of-time, validation.
 
 ## 6. SQL layer
 *Stage 4.*

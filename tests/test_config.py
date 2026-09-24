@@ -33,5 +33,12 @@ def test_agreed_data_quality_thresholds():
 
 
 def test_hold_out_settings():
-    assert 0 < config.TEST_SIZE < 1
+    # D-013: 70% development/training set, 30% final hold-out test set
+    assert config.TEST_SIZE == 0.30
     assert isinstance(config.RANDOM_SEED, int)
+
+
+def test_cross_validation_settings():
+    # D-013: 5-fold CV performed only within the development/training set
+    assert config.CV_FOLDS == 5
+    assert isinstance(config.CV_FOLDS, int)

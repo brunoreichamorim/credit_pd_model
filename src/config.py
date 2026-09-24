@@ -31,7 +31,12 @@ FIGURES_DIR = PROJECT_ROOT / "reports" / "figures"
 # Reproducibility and sampling  (decision log D-013)
 # ---------------------------------------------------------------------------
 RANDOM_SEED = 42
-TEST_SIZE = 0.30  # stratified random hold-out; this is out-of-sample, NOT out-of-time
+# 70% development/training set, with 5-fold cross-validation performed only
+# within the development/training set, and a 30% final hold-out test set used
+# once for final evaluation. Stratified random split on Status: this is
+# out-of-sample, NOT out-of-time, validation (D-004).
+TEST_SIZE = 0.30  # share of rows in the final hold-out test set
+CV_FOLDS = 5      # stratified folds, drawn from the development/training set only
 
 # ---------------------------------------------------------------------------
 # Dataset schema
