@@ -24,6 +24,7 @@ DUCKDB_PATH = PROCESSED_DIR / "credit_risk.duckdb"
 
 SQL_DIR = PROJECT_ROOT / "sql"
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
+DQ_REPORT_DIR = ARTIFACTS_DIR  # Stage 2 aggregate data-quality tables (dq_*.csv, committed)
 MODEL_PATH = ARTIFACTS_DIR / "pd_model.joblib"
 FIGURES_DIR = PROJECT_ROOT / "reports" / "figures"
 
@@ -43,6 +44,11 @@ CV_FOLDS = 5      # stratified folds, drawn from the development/training set on
 # ---------------------------------------------------------------------------
 ID_COL = "ID"
 TARGET_COL = "Status"  # 1 = default, 0 = non-default (definition undocumented, D-015)
+TARGET_VALUES = (0, 1)
+YEAR_COL = "year"
+
+# D-001: size of the documented source file, verified by the Stage 2 pipeline.
+EXPECTED_N_ROWS = 148_670
 
 # The 34 columns expected in the raw file (Yasser H., "Loan Default Dataset", Kaggle).
 # Stage 2 validates the actual file against this list and fails loudly on a mismatch.
@@ -67,6 +73,11 @@ PROPERTY_VALUE_MIN_VALID = 10_000
 
 # D-009 (ASSUMPTION): a contractual interest rate <= 0 is implausible -> NaN.
 RATE_OF_INTEREST_MIN_EXCLUSIVE = 0.0
+
+# Cleaned columns are ADDED next to the raw ones; raw columns are never overwritten.
+PROPERTY_VALUE_CLEAN_COL = "property_value_clean"  # D-005
+RATE_OF_INTEREST_CLEAN_COL = "rate_of_interest_clean"  # D-009
+LTV_CLEAN_COL = "LTV_clean"  # D-006
 
 # D-011: pricing variables whose missingness pattern must be investigated
 # against Status before any modelling decision is made about them.

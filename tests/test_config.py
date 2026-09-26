@@ -9,7 +9,7 @@ from src import config
 
 def test_paths_live_inside_project():
     for path in [config.RAW_DATA_PATH, config.CLEAN_DATA_PATH, config.DUCKDB_PATH,
-                 config.SQL_DIR, config.ARTIFACTS_DIR, config.FIGURES_DIR]:
+                 config.SQL_DIR, config.ARTIFACTS_DIR, config.DQ_REPORT_DIR, config.FIGURES_DIR]:
         assert config.PROJECT_ROOT in path.parents
 
 

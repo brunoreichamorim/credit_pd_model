@@ -26,7 +26,32 @@ data/raw/Loan_Default.csv
 ```
 
 ## 4. Data-quality findings
-*To be completed in Stages 2–3.* Every data decision is recorded in [`docs/decision_log.md`](docs/decision_log.md) and labelled FACT, ASSUMPTION, HEURISTIC or MODELLING CHOICE.
+Every data decision is recorded in [`docs/decision_log.md`](docs/decision_log.md) and labelled FACT, ASSUMPTION, HEURISTIC or MODELLING CHOICE. Stage 3 (EDA) will extend this section.
+
+**Stage 2 data pipeline** (`src/data_processing.py`):
+
+```bash
+python -m src.data_processing
+```
+
+The pipeline:
+1. Loads `data/raw/Loan_Default.csv`. The raw file is never modified.
+2. Checks that the file is the documented dataset (column names and order, a unique `ID`, and a binary `Status` with no missing values), and stops with an error if not.
+3. Writes aggregate data-quality tables to `artifacts/dq_*.csv`: a summary, missingness vs `Status`, categorical levels and numeric profiles.
+4. Applies only the documented cleaning rules. Rows are never deleted and raw columns are never overwritten:
+   - `year` is dropped because it is constant (D-004);
+   - `property_value_clean` sets `property_value` < 10,000 to missing (D-005, a heuristic affecting 6 rows);
+   - `rate_of_interest_clean` sets rates ≤ 0 to missing (D-009, 1 row);
+   - `LTV_clean` is recomputed as loan amount / cleaned property value (D-006).
+5. Saves `data/processed/loans_clean.parquet` (148,670 rows × 36 columns, gitignored).
+
+**Verified facts (Stage 2):**
+- 148,670 rows × 34 columns, and the schema matches exactly.
+- `ID` is unique and there are no duplicate rows.
+- `Status`: 112,031 zeros and 36,639 ones, a default rate of 24.64%.
+- `year` = 2019 in every row.
+
+**Key open finding:** the missingness of several variables almost perfectly separates `Status`. For example, `Interest_rate_spread` is missing if and only if `Status = 1`, and `credit_type = EQUI` has a 99.99% default rate. This is a potential target-leakage risk. It is being investigated in Stage 3 and has **not** yet been treated (D-011, D-017).
 
 ## 5. Methodology
 *To be completed.*
@@ -62,7 +87,8 @@ Raw CSV → data-quality checks & cleaning → Parquet → DuckDB / SQL → mode
 ## 12. Limitations
 *To be completed.* Known so far:
 - The default definition behind `Status` is undocumented (D-015).
-- `year` appears to be constant, so out-of-time validation is likely not possible (D-004).
+- `year` is 2019 for every loan, so the dataset has no genuine time dimension and true out-of-time validation is not possible (D-004).
+- Several variables are missing almost only for defaulted loans. Whether they would be available at the time of the credit decision is unresolved (D-011, D-017).
 
 ## 13. Technologies
 Python 3.11 · pandas · DuckDB (SQL) · scikit-learn · statsmodels · matplotlib · Plotly · Streamlit · pytest
@@ -79,7 +105,8 @@ python3.11 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-pytest                           # environment and configuration checks
+python -m src.data_processing    # needs data/raw/Loan_Default.csv
+pytest                           # tests on the raw file are skipped if it is absent
 ```
 
 ## Project structure
@@ -92,7 +119,7 @@ credit_pd_model/
 ├── src/                 # config, data processing, db, model, validation, scoring, monitoring
 ├── notebooks/           # 01 EDA · 02 model training · 03 validation · 04 monitoring
 ├── tests/               # pytest checks
-├── artifacts/           # metrics and result tables (model binary gitignored)
+├── artifacts/           # data-quality tables (dq_*.csv), metrics, result tables (model binary gitignored)
 ├── reports/figures/     # figures used in this README
 ├── docs/decision_log.md # every decision, with its type and rationale
 └── app.py               # Streamlit dashboard
@@ -103,7 +130,7 @@ credit_pd_model/
 | # | Stage | Status |
 |---|---|---|
 | 1 | Project structure & environment | ✅ |
-| 2 | Data pipeline (cleaning → Parquet) | ⏳ |
+| 2 | Data pipeline (cleaning → Parquet) | ✅ |
 | 3 | Exploratory data analysis & data-quality investigation | ⏳ |
 | 4 | SQL / DuckDB layer | ⏳ |
 | 5 | Baseline logistic regression PD model | ⏳ |
@@ -111,4 +138,4 @@ credit_pd_model/
 | 7 | Illustrative risk grades | ⏳ |
 | 8 | Monitoring (PSI / stability) | ⏳ |
 | 9 | Streamlit dashboard | ⏳ |
-| 10 | Final documentation & interview notes | ⏳ |
+| 10 | Final documentation | ⏳ |
