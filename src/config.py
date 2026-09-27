@@ -178,6 +178,91 @@ SEGMENT_CROSSES = [
     ("Region", "loan_type"),
 ]
 
+# ---------------------------------------------------------------------------
+# Stage 5 baseline logistic regression model  (src/model.py; decision log D-022 to D-024)
+# ---------------------------------------------------------------------------
+# Screening thresholds (development sample, evidence outside credit_type = EQUI).
+IV_MIN = 0.02              # HEURISTIC: below this, Information Value counts as "not predictive"
+RARE_LEVEL_MIN_SHARE = 0.01  # HEURISTIC: a level below this share is a rare-level candidate
+SCREENING_N_BINS = 10        # deciles used to compute Information Value for numeric features
+# A numeric column is binned for IV only if it has more than this many times
+# SCREENING_N_BINS distinct values (rule of thumb); otherwise its values are used as
+# levels, so a discrete column like `term` (25 values) keeps small groups visible.
+SCREENING_BIN_DISTINCT_FACTOR = 3
+LOGIT_MAX_ITER = 2_000  # solver iteration cap for every logistic regression in Stage 5
+
+# D-022: of the 16 D-017 candidates, 6 survive screening for the main model.
+# `term` and `co-applicant_credit_type` are dropped for cause (see D-022); the rest
+# of MAIN_MODEL_CANDIDATE_FEATURES fall to the IV_MIN screen.
+MAIN_MODEL_FEATURES = [
+    INCOME_CLEAN_COL, "loan_amount", "lump_sum_payment", "Neg_ammortization",
+    "loan_type", "loan_purpose",
+]
+LOG_NUMERIC_FEATURES = [INCOME_CLEAN_COL, "loan_amount"]  # log, then standardised (D-023)
+CATEGORICAL_FEATURES = ["lump_sum_payment", "Neg_ammortization", "loan_type", "loan_purpose"]
+# One-hot reference level per categorical feature: the most frequent level (D-023).
+REFERENCE_LEVELS = {
+    "lump_sum_payment": "not_lpsm",
+    "Neg_ammortization": "not_neg",
+    "loan_type": "type1",
+    "loan_purpose": "p3",
+}
+SCREENED_OUT_FEATURES = {
+    "term": "D-022 signal is almost all the unexplained term=300 x neg_amm cell",
+    "co-applicant_credit_type": "D-022 EQUI proxy; direction reverses outside EQUI",
+    "loan_limit": "D-022 IV < 0.02 outside EQUI",
+    "approv_in_adv": "D-022 IV < 0.02 outside EQUI",
+    "Credit_Worthiness": "D-022 IV < 0.02 outside EQUI",
+    "open_credit": "D-022 IV < 0.02 outside EQUI",
+    "interest_only": "D-022 IV < 0.02 outside EQUI",
+    "occupancy_type": "D-022 IV < 0.02 outside EQUI",
+    "total_units": "D-022 IV < 0.02 outside EQUI",
+    "Region": "D-022 IV < 0.02 outside EQUI",
+}
+
+# Expected coefficient sign from credit sense, keyed by the fitted feature name
+# (numeric features by name; one-hot categoricals as "<column>_<level>"). None
+# means no confident prior; those are reported but not asserted against.
+EXPECTED_SIGNS = {
+    INCOME_CLEAN_COL: -1,
+    "loan_amount": -1,
+    f"{INCOME_CLEAN_COL}_missing": None,
+    "lump_sum_payment_lpsm": +1,
+    "Neg_ammortization_neg_amm": +1,
+    "loan_type_type2": +1,
+    "loan_type_type3": None,
+    "loan_purpose_p1": None,
+    "loan_purpose_p2": +1,
+    "loan_purpose_p4": None,
+}
+
+# D-024: the leakage-demonstration model (option C). Never used on the hold-out,
+# for risk grades, monitoring or the dashboard.
+LEAKAGE_DEMO_VIEW = "leakage_demo_dataset"
+# The D-017-excluded fields (clean versions where they exist), plus term and
+# co-applicant_credit_type (D-022), added to MAIN_MODEL_FEATURES for the full demo model.
+# Numeric ones get a missing-value indicator; categorical ones keep missing as a level,
+# so the demo model sees the missingness that carries the leakage (D-024).
+LEAKAGE_DEMO_NUMERIC_FEATURES = [
+    RATE_OF_INTEREST_CLEAN_COL, "Interest_rate_spread", "Upfront_charges",
+    PROPERTY_VALUE_CLEAN_COL, LTV_CLEAN_COL, "dtir1",
+]
+LEAKAGE_DEMO_CATEGORICAL_FEATURES = [
+    "credit_type", "age", "submission_of_application", "term", "co-applicant_credit_type",
+]
+LEAKAGE_DEMO_EXTRA_FEATURES = LEAKAGE_DEMO_NUMERIC_FEATURES + LEAKAGE_DEMO_CATEGORICAL_FEATURES
+# The ablation model: only whether each of these is missing, plus credit_type.
+# submission_of_application is missing on exactly the same rows as age (D-017),
+# so only age is used to avoid a duplicated indicator.
+LEAKAGE_ABLATION_MISSINGNESS_FEATURES = [
+    RATE_OF_INTEREST_CLEAN_COL, "Interest_rate_spread", "Upfront_charges",
+    PROPERTY_VALUE_CLEAN_COL, "dtir1", "age",
+]
+
+MODEL_SCREENING_PATH = ARTIFACTS_DIR / "model_screening.csv"
+MODEL_CV_METRICS_PATH = ARTIFACTS_DIR / "model_cv_metrics.csv"
+MODEL_COEFFICIENTS_PATH = ARTIFACTS_DIR / "model_coefficients.csv"
+
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150
 COLOR_PRIMARY = "#2a78d6"    # single series / first series

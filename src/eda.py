@@ -4,6 +4,7 @@ Only small, reusable calculations live here, so they can be tested and reused la
 (for example when screening features in Stage 5). Plots stay in the notebook.
 """
 
+import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
@@ -49,3 +50,39 @@ def single_feature_auc(df: pd.DataFrame, col: str) -> float:
     """
     present = df.loc[df[col].notna(), [col, config.TARGET_COL]]
     return float(roc_auc_score(present[config.TARGET_COL], present[col]))
+
+
+def _levels(df: pd.DataFrame, col: str, n_bins: int) -> pd.Series:
+    """Turn a column into levels for a screening table: quantile bins for numerics with
+    many distinct values, categories otherwise. Missing values form their own level,
+    so a column's missingness (a leakage indicator in this dataset, D-017) is screened
+    along with its values, not silently dropped.
+
+    A numeric column is only binned if it has clearly more distinct values than
+    `n_bins` (config.SCREENING_BIN_DISTINCT_FACTOR times, a rule of thumb): `term`
+    takes 25 discrete values and is treated as a category, not binned, so a small
+    group like `term = 300` is not diluted into a decile dominated by `term = 360`.
+    """
+    values = df[col]
+    max_distinct = config.SCREENING_BIN_DISTINCT_FACTOR * n_bins
+    if pd.api.types.is_numeric_dtype(values) and values.nunique(dropna=True) > max_distinct:
+        values = pd.qcut(values, n_bins, duplicates="drop").astype(str)
+        values = values.where(df[col].notna(), np.nan)
+    return values.astype("object").where(df[col].notna(), "<missing>")
+
+
+def information_value(df: pd.DataFrame, col: str, n_bins: int = config.SCREENING_N_BINS) -> float:
+    """Information Value (IV) of one feature against Status: a standard univariate
+    screen (HEURISTIC thresholds, see D-022). Categories are used as levels; numeric
+    columns are split into quantile bins first. A small constant avoids division by
+    zero when a level has no goods or no bads.
+
+    Rules of thumb: < 0.02 not predictive, 0.02-0.1 weak, 0.1-0.3 medium, > 0.3 strong.
+    These are HEURISTIC labels, not a regulatory standard.
+    """
+    levels = _levels(df, col, n_bins)
+    grouped = df.groupby(levels)[config.TARGET_COL].agg(bad="sum", n="size")
+    good = grouped["n"] - grouped["bad"]
+    bad_rate = (grouped["bad"] + 0.5) / (grouped["bad"].sum() + 0.5)
+    good_rate = (good + 0.5) / (good.sum() + 0.5)
+    return float(((good_rate - bad_rate) * np.log(good_rate / bad_rate)).sum())

@@ -5,9 +5,11 @@
 -- Only non-missing values are binned (UNPIVOT drops NULLs). NTILE makes bins of equal
 -- size, so when many loans share one value (loan amounts are rounded), that value can
 -- appear in two neighbouring bins. bin_min / bin_max show the range of each bin.
+-- ORDER BY value, ID breaks ties on the repeated values deterministically, so which
+-- rows land in which bin does not depend on parallel execution order.
 -- Parameters: $n_bins (config.SQL_N_BINS), $equi (config.EQUI_LEVEL).
 WITH long_values AS (
-    UNPIVOT (SELECT Status, credit_type, loan_amount, income_clean FROM loans_clean)
+    UNPIVOT (SELECT ID, Status, credit_type, loan_amount, income_clean FROM loans_clean)
     ON loan_amount, income_clean
     INTO NAME variable VALUE value
 ),
@@ -20,7 +22,7 @@ populations AS (
 binned AS (
     SELECT
         *,
-        NTILE($n_bins) OVER (PARTITION BY population, variable ORDER BY value) AS bin
+        NTILE($n_bins) OVER (PARTITION BY population, variable ORDER BY value, ID) AS bin
     FROM populations
 )
 SELECT

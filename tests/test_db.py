@@ -57,6 +57,7 @@ def toy_con(toy_processed, tmp_path):
     db.load_loans(con, parquet)
     db.assign_sample_split(con)
     db.create_model_dataset_view(con)
+    db.create_leakage_demo_view(con)
     yield con
     con.close()
 
@@ -69,7 +70,7 @@ def test_load_loans_requires_processed_data(tmp_path):
 
 def test_database_objects_have_configured_names(toy_con):
     tables = {row[0] for row in toy_con.execute("SHOW TABLES").fetchall()}
-    assert {config.LOANS_TABLE, config.SPLIT_TABLE, config.MODEL_DATASET_VIEW} <= tables
+    assert {config.LOANS_TABLE, config.SPLIT_TABLE, config.MODEL_DATASET_VIEW, config.LEAKAGE_DEMO_VIEW} <= tables
 
 
 def test_split_is_stratified_complete_and_deterministic(toy_processed):
@@ -96,6 +97,14 @@ def test_model_dataset_contains_only_admissible_features(toy_con):
     assert not set(view.columns) & set(config.EXCLUDED_FROM_MAIN_MODEL.keys() - {config.ID_COL})
     assert len(view) == N_TOY
     assert set(view["sample"]) == {config.SAMPLE_DEVELOPMENT, config.SAMPLE_HOLDOUT}
+
+
+def test_leakage_demo_view_matches_config(toy_con):
+    # D-024: the SQL view lists its columns literally; they must match config exactly
+    view = toy_con.execute(f"SELECT * FROM {config.LEAKAGE_DEMO_VIEW}").df()
+    expected = ([config.ID_COL, "sample", config.TARGET_COL]
+                + config.MAIN_MODEL_FEATURES + config.LEAKAGE_DEMO_EXTRA_FEATURES)
+    assert list(view.columns) == expected
 
 
 def test_sql_missingness_matches_pandas(toy_con, toy_processed):
@@ -231,15 +240,19 @@ def test_real_split_sizes_and_default_rates(real_build):
 
 @needs_raw_data
 def test_real_split_is_identical_on_rebuild(real_build, tmp_path):
-    folder, parquet, _ = real_build
+    folder, parquet, first_tables = real_build
     first = db.connect(folder / "credit_risk.duckdb")
     second_path = tmp_path / "again.duckdb"
-    db.build_database(second_path, parquet, tmp_path, verbose=False)
+    second_tables = db.build_database(second_path, parquet, tmp_path, verbose=False)
     second = db.connect(second_path)
     query = f"SELECT * FROM {config.SPLIT_TABLE} ORDER BY {config.ID_COL}"
     pd.testing.assert_frame_equal(first.execute(query).df(), second.execute(query).df())
     first.close()
     second.close()
+
+    # risk_deciles uses NTILE on a column with many tied values (D-020): its ORDER BY
+    # must break ties on ID, or which rows land in which bin depends on execution order
+    pd.testing.assert_frame_equal(first_tables["risk_deciles"], second_tables["risk_deciles"])
 
 
 @needs_raw_data

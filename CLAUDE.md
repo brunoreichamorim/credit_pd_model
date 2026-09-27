@@ -117,6 +117,7 @@ Windows, project virtual environment `.venv`, Python 3.11.9. Run from the reposi
 .venv\Scripts\python.exe -m pytest                 # full test suite
 .venv\Scripts\python.exe -m src.data_processing    # rebuild processed data and dq_*.csv tables
 .venv\Scripts\python.exe -m src.db                 # rebuild the DuckDB database and sql_*.csv tables
+.venv\Scripts\python.exe -m src.model               # fit the Stage 5 model and model_*.csv tables
 ```
 
 - Run the relevant tests after every meaningful code change.

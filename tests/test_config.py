@@ -56,3 +56,30 @@ def test_cross_validation_settings():
     # D-013: 5-fold CV performed only within the development/training set
     assert config.CV_FOLDS == 5
     assert isinstance(config.CV_FOLDS, int)
+
+
+def test_main_model_features_and_screened_out_cover_every_candidate_once():
+    # D-022: the 16 D-017 candidates split, with no overlap, into 6 kept and 10 screened out
+    kept = config.MAIN_MODEL_FEATURES
+    screened = set(config.SCREENED_OUT_FEATURES)
+    assert len(kept) == len(set(kept)) == 6
+    assert len(screened) == 10
+    assert not set(kept) & screened
+    assert set(kept) | screened == set(config.MAIN_MODEL_CANDIDATE_FEATURES)
+    assert not set(kept) & set(config.EXCLUDED_FROM_MAIN_MODEL)
+
+
+def test_main_model_feature_groups_partition_the_kept_features():
+    # every kept feature is either log-numeric or categorical, never both, never extra
+    numeric = set(config.LOG_NUMERIC_FEATURES)
+    categorical = set(config.CATEGORICAL_FEATURES)
+    assert not numeric & categorical
+    assert numeric | categorical == set(config.MAIN_MODEL_FEATURES)
+    assert set(config.REFERENCE_LEVELS) == categorical
+
+
+def test_screening_thresholds():
+    # D-022, D-023 heuristics
+    assert config.IV_MIN == 0.02
+    assert config.RARE_LEVEL_MIN_SHARE == 0.01
+    assert config.SCREENING_N_BINS == 10

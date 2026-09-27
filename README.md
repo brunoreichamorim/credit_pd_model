@@ -120,7 +120,31 @@ Segments with fewer than 10 loans are left out of the segment tables, so no comm
 - For `loan_type = type2`, the amount-weighted default rate is 32.0%, against a count-based 34.5%. The smaller type2 loans default more often.
 
 ## 7. PD model
-*Stage 5.*
+**Stage 5** (`src/model.py`, notebook [`02_model_training.ipynb`](notebooks/02_model_training.ipynb)):
+
+```bash
+python -m src.model    # needs the DuckDB database from Stage 4 (python -m src.db)
+```
+
+Fitted only on the development sample (D-013), with 5-fold stratified cross-validation. All preprocessing (imputation, scaling, one-hot encoding) is fitted inside a scikit-learn Pipeline, on training folds only.
+
+**Feature screening (decision D-022).** Of the 16 D-017 candidates, `term` and `co-applicant_credit_type` are dropped for cause -- `term`'s only real signal is an unexplained cell (`term = 300` with `Neg_ammortization`, 579 loans defaulting at 91.4% outside EQUI), and `co-applicant_credit_type` is a proxy for `credit_type = EQUI` whose effect direction reverses once EQUI is excluded. The remaining 10 candidates are screened by Information Value (outside EQUI); 6 pass:
+
+| Feature | Coefficient | Direction |
+|---|---:|---|
+| `income_clean` | -0.284 | higher income -> lower PD |
+| `lump_sum_payment = lpsm` | +2.516 | balloon payment -> higher PD |
+| `Neg_ammortization = neg_amm` | +1.096 | negative amortisation -> higher PD |
+| `loan_type = type2` (business/commercial) | +0.497 | higher PD |
+| `loan_purpose = p2` | +0.356 | higher PD |
+| `loan_amount` | +0.062 | see note below |
+
+**Cross-validation results (mean over 5 folds, development sample):** AUC 0.651, Gini 0.301, KS 0.239, Brier 0.171. The feature screen used the whole development sample, so these are slightly optimistic; the Stage 6 hold-out is the unbiased check (D-022).
+
+**`loan_amount` changes sign in the model.** On its own, a larger loan goes with a *lower* default rate, because larger loans go to higher-income borrowers. With `income_clean` in the model (the two are correlated at about 0.63 in log scale), the coefficient is small and positive: for the same income, a larger loan means higher leverage. It is kept, and the reasoning is recorded in D-023. The coefficient table still flags the mismatch with the univariate prior rather than hiding it.
+
+**Leakage demonstration (option C, decision D-024).** A full model that adds back every D-017-excluded field, with their missing values kept visible, reaches a mean CV AUC of **1.000**, and so does a model built from *only* the missing-value indicators of those fields (plus `credit_type`). This shows concretely how a model that ignored the D-017 investigation would look almost perfect while learning nothing about borrower risk. Neither leakage model is used for risk grades, monitoring or the dashboard.
+
 
 ## 8. Validation
 *Stage 6.*
@@ -185,7 +209,7 @@ credit_pd_model/
 | 2 | Data pipeline (cleaning → Parquet) | ✅ |
 | 3 | Exploratory data analysis & data-quality investigation | ✅ |
 | 4 | SQL / DuckDB layer | ✅ |
-| 5 | Baseline logistic regression PD model | ⏳ |
+| 5 | Baseline logistic regression PD model | ✅ |
 | 6 | Validation & calibration | ⏳ |
 | 7 | Illustrative risk grades | ⏳ |
 | 8 | Monitoring (PSI / stability) | ⏳ |

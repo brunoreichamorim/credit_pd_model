@@ -1,0 +1,17 @@
+feature,iv_all,iv_outside_equi,kept,reason
+income_clean,0.08496598596480284,0.1577486253651798,True,D-022 kept: passes screening
+lump_sum_payment,0.14707212091870286,0.137023673253654,True,D-022 kept: passes screening
+Neg_ammortization,0.11164738976852703,0.13294334500888108,True,D-022 kept: passes screening
+loan_type,0.043194830811209665,0.06976294882125844,True,D-022 kept: passes screening
+loan_amount,0.03643135618225702,0.06128909157501169,True,D-022 kept: passes screening
+term,0.050133867530817375,0.058096059655536055,False,D-022 signal is almost all the unexplained term=300 x neg_amm cell
+co-applicant_credit_type,0.11505738881637304,0.040238331792193535,False,D-022 EQUI proxy; direction reverses outside EQUI
+loan_purpose,0.008592464111952868,0.020356827714830498,True,D-022 kept: passes screening
+Region,0.014142878683107114,0.019106729859454923,False,D-022 IV < 0.02 outside EQUI
+loan_limit,0.01370755547256136,0.014033391116888831,False,D-022 IV < 0.02 outside EQUI
+occupancy_type,0.0052124441025496425,0.011273059803950625,False,D-022 IV < 0.02 outside EQUI
+approv_in_adv,0.007906855762075976,0.009847814575902156,False,D-022 IV < 0.02 outside EQUI
+total_units,0.0038916147033779074,0.006667792278736381,False,D-022 IV < 0.02 outside EQUI
+Credit_Worthiness,0.005258170595878139,0.005105783096762628,False,D-022 IV < 0.02 outside EQUI
+interest_only,0.0015480166198232003,0.0011020938560268021,False,D-022 IV < 0.02 outside EQUI
+open_credit,0.0006565466211153554,0.000729798440642146,False,D-022 IV < 0.02 outside EQUI

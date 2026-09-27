@@ -5,6 +5,8 @@ DuckDB is the single data source for the later stages (decision log D-020):
     loans_clean     the processed Parquet from Stage 2, loaded as a table
     sample_split    ID -> "development" / "holdout", the D-013 split made once
     model_dataset   view with ID, sample, Status and only the 16 D-017 candidate features
+    leakage_demo_dataset  view that adds back the D-017-excluded fields, for the
+                          Stage 5 leakage demonstration only (D-024)
 
 Steps (each is a separate function so it can be tested on its own):
 
@@ -12,6 +14,7 @@ Steps (each is a separate function so it can be tested on its own):
     load_loans                 load data/processed/loans_clean.parquet into DuckDB
     assign_sample_split        stratified 70/30 split on Status, seed 42 (D-013)
     create_model_dataset_view  sql/model_dataset.sql
+    create_leakage_demo_view   sql/leakage_demo_dataset.sql
     run_query                  run one sql/<name>.sql file and return its result
     run_analyses               all aggregate SQL analyses, keyed by output name
     save_sql_tables            write them to artifacts/sql_*.csv (aggregates only)
@@ -123,6 +126,11 @@ def create_model_dataset_view(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(read_sql("model_dataset"))
 
 
+def create_leakage_demo_view(con: duckdb.DuckDBPyConnection) -> None:
+    """Create the leakage_demo_dataset view (sql/leakage_demo_dataset.sql, D-024)."""
+    con.execute(read_sql("leakage_demo_dataset"))
+
+
 def run_analyses(con: duckdb.DuckDBPyConnection) -> dict[str, pd.DataFrame]:
     """Run every aggregate SQL analysis and return the results, keyed by name."""
     return {name: run_query(con, name, **params) for name, params in ANALYSIS_QUERIES.items()}
@@ -152,6 +160,7 @@ def build_database(
         load_loans(con, parquet_path)
         assign_sample_split(con)
         create_model_dataset_view(con)
+        create_leakage_demo_view(con)
         tables = run_analyses(con)
     finally:
         con.close()
