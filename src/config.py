@@ -74,10 +74,16 @@ PROPERTY_VALUE_MIN_VALID = 10_000
 # D-009 (ASSUMPTION): a contractual interest rate <= 0 is implausible -> NaN.
 RATE_OF_INTEREST_MIN_EXCLUSIVE = 0.0
 
+# D-008 (MODELLING CHOICE, Stage 3): income <= 0 is treated as invalid -> NaN.
+# The 1,260 zero-income rows default at 99.4%, so the zero behaves like a
+# leakage indicator (D-017), not like a genuine low income.
+INCOME_MIN_EXCLUSIVE = 0.0
+
 # Cleaned columns are ADDED next to the raw ones; raw columns are never overwritten.
 PROPERTY_VALUE_CLEAN_COL = "property_value_clean"  # D-005
 RATE_OF_INTEREST_CLEAN_COL = "rate_of_interest_clean"  # D-009
 LTV_CLEAN_COL = "LTV_clean"  # D-006
+INCOME_CLEAN_COL = "income_clean"  # D-008
 
 # D-011: pricing variables whose missingness pattern must be investigated
 # against Status before any modelling decision is made about them.
@@ -86,3 +92,71 @@ PRICING_COLUMNS_UNDER_INVESTIGATION = [
     "Interest_rate_spread",
     "Upfront_charges",
 ]
+
+# ---------------------------------------------------------------------------
+# Stage 3 exploratory analysis  (notebooks/01_eda.ipynb)
+# ---------------------------------------------------------------------------
+# D-017: fields whose missingness (or, for credit_type, one category) almost
+# perfectly separates Status. Investigated in Stage 3; treatment still Open.
+MISSINGNESS_COLUMNS_UNDER_INVESTIGATION = [
+    RATE_OF_INTEREST_CLEAN_COL,
+    "Interest_rate_spread",
+    "Upfront_charges",
+    "dtir1",
+    PROPERTY_VALUE_CLEAN_COL,
+    "income",
+]
+
+# D-017 (MODELLING CHOICE, agreed after Stage 3): feature scope of the main
+# (application-time) model. A field is admissible only if it would be captured
+# for every applicant at decision time AND its values or missingness are not
+# driven by the outcome. Stage 5 screening may remove further candidates.
+MAIN_MODEL_CANDIDATE_FEATURES = [
+    "loan_amount", "term", INCOME_CLEAN_COL,
+    "loan_limit", "approv_in_adv", "loan_type", "loan_purpose", "Credit_Worthiness",
+    "open_credit", "Neg_ammortization", "interest_only", "lump_sum_payment",
+    "occupancy_type", "total_units", "co-applicant_credit_type", "Region",
+]
+# Excluded from the main model, with the decision that excludes each one.
+EXCLUDED_FROM_MAIN_MODEL = {
+    ID_COL: "D-003 identifier",
+    "rate_of_interest": "D-017 missing only for defaults",
+    RATE_OF_INTEREST_CLEAN_COL: "D-017 missing only for defaults",
+    "Interest_rate_spread": "D-017 missing if and only if default",
+    "Upfront_charges": "D-017 missingness driven by the outcome",
+    "credit_type": "D-017 EQUI is 99.99% default",
+    "property_value": "D-017 missingness driven by the outcome",
+    PROPERTY_VALUE_CLEAN_COL: "D-017 missingness driven by the outcome",
+    "LTV": "D-006/D-017 derived from property_value",
+    LTV_CLEAN_COL: "D-017 derived from property_value",
+    "dtir1": "D-017 missingness driven by the outcome",
+    "income": "D-008 raw value; income_clean is used instead",
+    "age": "D-017 missing only for defaults; D-016 sensitive",
+    "submission_of_application": "D-017 missing only for defaults",
+    "Gender": "D-016 protected characteristic",
+    "Credit_Score": "D-019 no ranking power",
+    "business_or_commercial": "D-018 duplicates loan_type",
+    "construction_type": "D-018 near-constant; rare level 100% default",
+    "Secured_by": "D-018 duplicates construction_type",
+    "Security_Type": "D-018 duplicates construction_type",
+}
+
+# Numeric columns analysed in the EDA (cleaned versions where they exist).
+EDA_NUMERIC_COLUMNS = [
+    "loan_amount", RATE_OF_INTEREST_CLEAN_COL, "Interest_rate_spread", "Upfront_charges",
+    "term", PROPERTY_VALUE_CLEAN_COL, "income", "Credit_Score", LTV_CLEAN_COL, "dtir1",
+]
+EDA_N_BINS = 10  # deciles for default-rate-by-bin tables
+EDA_MIN_LEVEL_SHARE = 0.01  # HEURISTIC, display only: levels below 1% of rows are left out of range charts
+
+# Chart style for static matplotlib figures (light mode).
+FIGURE_DPI = 150
+COLOR_PRIMARY = "#2a78d6"    # single series / first series
+COLOR_SECONDARY = "#eb6834"  # second series
+COLOR_INK = "#0b0b0b"
+COLOR_INK_MUTED = "#52514e"
+COLOR_GRID = "#e1e0d9"
+COLOR_SURFACE = "#fcfcfb"
+COLOR_DIVERGING_MID = "#f0efec"  # midpoint of the blue <-> red heatmap scale
+COLOR_DIVERGING_NEG = "#2a78d6"
+COLOR_DIVERGING_POS = "#e34948"

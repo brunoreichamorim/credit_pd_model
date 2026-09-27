@@ -27,9 +27,21 @@ def test_expected_schema():
 
 
 def test_agreed_data_quality_thresholds():
-    # D-005 and D-009 in docs/decision_log.md
+    # D-005, D-009 and D-008 in docs/decision_log.md
     assert config.PROPERTY_VALUE_MIN_VALID == 10_000
     assert config.RATE_OF_INTEREST_MIN_EXCLUSIVE == 0.0
+    assert config.INCOME_MIN_EXCLUSIVE == 0.0
+
+
+def test_main_model_feature_scope_covers_every_column_once():
+    # D-017: each processed column is a candidate, excluded with a reason, or the target
+    from src.data_processing import processed_columns
+
+    candidates = config.MAIN_MODEL_CANDIDATE_FEATURES
+    excluded = set(config.EXCLUDED_FROM_MAIN_MODEL)
+    assert len(candidates) == len(set(candidates)) == 16
+    assert not set(candidates) & excluded
+    assert set(candidates) | excluded | {config.TARGET_COL} == set(processed_columns())
 
 
 def test_hold_out_settings():

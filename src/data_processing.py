@@ -198,6 +198,7 @@ def apply_cleaning_rules(df: pd.DataFrame) -> pd.DataFrame:
     D-005  property_value < PROPERTY_VALUE_MIN_VALID -> property_value_clean = NaN (HEURISTIC)
     D-009  rate_of_interest <= 0                     -> rate_of_interest_clean = NaN (ASSUMPTION)
     D-006  LTV_clean = 100 * loan_amount / property_value_clean
+    D-008  income <= 0                               -> income_clean = NaN (MODELLING CHOICE)
 
     The raw columns stay untouched, so every rule can be audited or reversed later.
     The row count never changes.
@@ -221,13 +222,19 @@ def apply_cleaning_rules(df: pd.DataFrame) -> pd.DataFrame:
 
     clean[config.LTV_CLEAN_COL] = 100 * clean["loan_amount"] / clean[config.PROPERTY_VALUE_CLEAN_COL]
 
+    income = clean["income"]
+    clean[config.INCOME_CLEAN_COL] = income.where(income > config.INCOME_MIN_EXCLUSIVE)
+
     return clean
 
 
 def processed_columns() -> list[str]:
     """The schema of the processed dataset: raw columns minus year, plus the cleaned columns."""
     raw = [c for c in config.EXPECTED_RAW_COLUMNS if c != config.YEAR_COL]
-    return raw + [config.PROPERTY_VALUE_CLEAN_COL, config.RATE_OF_INTEREST_CLEAN_COL, config.LTV_CLEAN_COL]
+    return raw + [
+        config.PROPERTY_VALUE_CLEAN_COL, config.RATE_OF_INTEREST_CLEAN_COL,
+        config.LTV_CLEAN_COL, config.INCOME_CLEAN_COL,
+    ]
 
 
 # ---------------------------------------------------------------------------

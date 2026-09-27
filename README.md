@@ -26,7 +26,7 @@ data/raw/Loan_Default.csv
 ```
 
 ## 4. Data-quality findings
-Every data decision is recorded in [`docs/decision_log.md`](docs/decision_log.md) and labelled FACT, ASSUMPTION, HEURISTIC or MODELLING CHOICE. Stage 3 (EDA) will extend this section.
+Every data decision is recorded in [`docs/decision_log.md`](docs/decision_log.md) and labelled FACT, ASSUMPTION, HEURISTIC or MODELLING CHOICE.
 
 **Stage 2 data pipeline** (`src/data_processing.py`):
 
@@ -42,8 +42,9 @@ The pipeline:
    - `year` is dropped because it is constant (D-004);
    - `property_value_clean` sets `property_value` < 10,000 to missing (D-005, a heuristic affecting 6 rows);
    - `rate_of_interest_clean` sets rates ≤ 0 to missing (D-009, 1 row);
-   - `LTV_clean` is recomputed as loan amount / cleaned property value (D-006).
-5. Saves `data/processed/loans_clean.parquet` (148,670 rows × 36 columns, gitignored).
+   - `LTV_clean` is recomputed as loan amount / cleaned property value (D-006);
+   - `income_clean` sets income ≤ 0 to missing (D-008, 1,260 rows; added after Stage 3).
+5. Saves `data/processed/loans_clean.parquet` (148,670 rows × 37 columns, gitignored).
 
 **Verified facts (Stage 2):**
 - 148,670 rows × 34 columns, and the schema matches exactly.
@@ -51,7 +52,30 @@ The pipeline:
 - `Status`: 112,031 zeros and 36,639 ones, a default rate of 24.64%.
 - `year` = 2019 in every row.
 
-**Key open finding:** the missingness of several variables almost perfectly separates `Status`. For example, `Interest_rate_spread` is missing if and only if `Status = 1`, and `credit_type = EQUI` has a 99.99% default rate. This is a potential target-leakage risk. It is being investigated in Stage 3 and has **not** yet been treated (D-011, D-017).
+**Stage 3 exploratory analysis** ([`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb), figures in `reports/figures/`). Every number below is checked by an `assert` in the notebook.
+
+**Possible target leakage.** The missingness of several variables almost perfectly separates `Status`:
+- `Interest_rate_spread` is missing if and only if `Status = 1`.
+- All 36,439 rows with `rate_of_interest` missing are defaults.
+- `credit_type = EQUI` and a missing `property_value` each have a 99.99% default rate.
+- None of the 101,333 rows with all of rate, spread, upfront charges, `dtir1`, `property_value` and `income` present is a default. So no subset of rows is free of the pattern.
+
+![Missing values and one category almost perfectly separate Status](reports/figures/05_leakage_indicators.png)
+
+The cause cannot be established from the data. It may be how the dataset was assembled, or fields recorded after the outcome.
+
+**Agreed treatment (D-017).** The main model uses only fields that would be captured for every applicant at decision time, and whose values or missingness are not driven by the outcome. This excludes:
+- the pricing variables, `credit_type`, `property_value`/`LTV`, `dtir1`, `age` and `submission_of_application`;
+- `Gender` (D-016) and `Credit_Score` (D-019);
+- the redundant columns in D-018.
+
+That leaves 16 candidate features. A full-feature model is built only as a clearly labelled leakage demonstration.
+
+**Other Stage 3 facts:**
+- `income = 0` (1,260 rows) has a 99.4% default rate, and still 97.7% outside EQUI. It is treated as missing in `income_clean` (D-008). A missing income is ordinary: those rows default at 13.5%.
+- `Upfront_charges = 0` has a 0.26% default rate, against 0.11% for positive fees. Nothing contradicts the "no fee" reading (D-010).
+- `Credit_Score` is uniform over 500–900, with a single-feature AUC of 0.503 and no correlation with other columns (D-019).
+- Differences in default rate between category levels remain after the EQUI records are set aside, for example `loan_type` from 14.4% to 25.8%.
 
 ## 5. Methodology
 *To be completed.*
@@ -88,7 +112,8 @@ Raw CSV → data-quality checks & cleaning → Parquet → DuckDB / SQL → mode
 *To be completed.* Known so far:
 - The default definition behind `Status` is undocumented (D-015).
 - `year` is 2019 for every loan, so the dataset has no genuine time dimension and true out-of-time validation is not possible (D-004).
-- Several variables are missing almost only for defaulted loans. Whether they would be available at the time of the credit decision is unresolved (D-011, D-017).
+- Several variables are missing almost only for defaulted loans, and are excluded from the main model (D-011, D-017). This includes LTV and debt-to-income, the core mortgage risk drivers. The main model is therefore a prototype built on data that failed its fitness-for-use check. In a real bank, the data would be sent back to its owner for remediation.
+- `Credit_Score` carries no ranking power in this dataset (D-019).
 
 ## 13. Technologies
 Python 3.11 · pandas · DuckDB (SQL) · scikit-learn · statsmodels · matplotlib · Plotly · Streamlit · pytest
@@ -131,7 +156,7 @@ credit_pd_model/
 |---|---|---|
 | 1 | Project structure & environment | ✅ |
 | 2 | Data pipeline (cleaning → Parquet) | ✅ |
-| 3 | Exploratory data analysis & data-quality investigation | ⏳ |
+| 3 | Exploratory data analysis & data-quality investigation | ✅ |
 | 4 | SQL / DuckDB layer | ⏳ |
 | 5 | Baseline logistic regression PD model | ⏳ |
 | 6 | Validation & calibration | ⏳ |

@@ -79,12 +79,18 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - **After D-005:** 1,793 rows have `LTV_clean` above 100% and 11 above 200%. The maximum is 263.5%. The most extreme cases are mostly small loans on low-value properties: the 27 rows above 150% have a median loan of 106,500 and a median property value of 68,000.
   - **Why they are kept:** these values are unusual but potentially legitimate, so none are capped or removed. Very low LTVs (minimum 0.97%, a 106,500 loan on an 11,008,000 property) are also unusual but potentially legitimate, and are kept.
 
-### D-008 `income = 0` is kept as recorded
-- **Type:** ASSUMPTION
-- **Status:** Agreed; to be reassessed (Stage 3)
-- **Decision:** 1,260 rows with `income = 0` (FACT, Stage 2) are kept unchanged. Separately, 9,150 rows (6.15%) have `income` missing.
-- **Why:** Zero could mean genuine zero income, missing data coded as 0, or another convention. With no data dictionary, we cannot tell which. Keeping the value is the least invasive choice. This is documented as a limitation.
+### D-008 `income = 0` is treated as invalid (set to missing in `income_clean`)
+- **Type:** MODELLING CHOICE (the Stage 3 evidence is FACT)
+- **Status:** Agreed (reassessed in Stage 3; implemented as `income_clean`, raw `income` kept unchanged)
+- **Original decision (Stage 2):** 1,260 rows with `income = 0` (FACT, Stage 2) were kept unchanged. Separately, 9,150 rows (6.15%) have `income` missing.
+- **Original reasoning:** Zero could mean genuine zero income, missing data coded as 0, or another convention. With no data dictionary, we cannot tell which. Keeping the value was the least invasive choice.
 - **Revisit if:** the default rate or other characteristics of the zero-income rows differ strongly from their neighbours.
+- **Stage 3 evidence (FACT; `notebooks/01_eda.ipynb`, section 6):** the "revisit" condition is met.
+  - The 1,260 zero-income rows have a 99.4% default rate. That is far above the lowest positive-income decile and the portfolio rate of 24.64%.
+  - 912 of them are `credit_type = EQUI`. The 348 zero-income rows outside EQUI still default at 97.7%. So the zero is a leakage indicator in its own right (see D-017), not a genuine low-income effect.
+  - By contrast, a *missing* income looks like ordinary missingness: those rows default at 13.5%, below the 25.4% for rows with income present.
+- **Decision (Stage 3):** `income_clean` sets `income <= 0` to missing (`config.INCOME_MIN_EXCLUSIVE`). The combined missing group (10,410 rows) then has a 23.9% default rate, close to the portfolio rate, so a missing `income_clean` no longer reveals the target. Missing values are imputed inside the model pipeline in Stage 5.
+- **Why:** a mortgage with zero recorded income is implausible without a special product, and here the value behaves like the other outcome-driven indicators. Setting it to missing follows the same pattern as D-005 and D-009. Rows are kept, and the raw column is unchanged.
 
 ### D-009 `rate_of_interest <= 0` is treated as invalid (set to missing)
 - **Type:** ASSUMPTION
@@ -94,12 +100,17 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 
 ### D-010 `Upfront_charges = 0` is kept as a legitimate "no fee" value
 - **Type:** ASSUMPTION
-- **Status:** Agreed; to be reassessed (Stage 3)
+- **Status:** Agreed (reassessed in Stage 3; no change)
 - **Why:** 20,770 zeros (FACT, Stage 2) is too frequent to be a random error, and "no upfront fee" is a normal product feature.
+- **Stage 3 reassessment (FACT; `notebooks/01_eda.ipynb`, section 7):**
+  - Zero fees have a 0.26% default rate, against 0.11% for positive fees. Both are far below the portfolio rate, because a present `Upfront_charges` value almost never occurs on a default (D-011).
+  - Zeros are more common in `type2` loans (22.8% of present values) than in `type1` (11.7%).
+  - Nothing contradicts the "no fee" reading.
+- **Scope:** `Upfront_charges` is excluded from the main model under D-017, so this assumption only affects the leakage demonstration model.
 
 ### D-011 Mandatory investigation of missingness in the pricing variables
-- **Type:** Investigation (the result will be FACT; the treatment will be a MODELLING CHOICE)
-- **Status:** Open (Stage 3)
+- **Type:** Investigation (the result is FACT; the treatment is a MODELLING CHOICE)
+- **Status:** Agreed (investigation completed in Stage 3; treatment in D-017)
 - **Scope:** `rate_of_interest`, `Interest_rate_spread`, `Upfront_charges`.
 - **Plan:**
   1. Measure the missing rate of each variable and whether the three are missing on the same rows.
@@ -117,7 +128,11 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - `Interest_rate_spread` is missing **if and only if** `Status = 1`. Its missingness alone separates the target perfectly.
   - The three variables are missing together on 36,439 rows, all of which have `Status = 1`. Every row with `rate_of_interest` missing also has the other two missing.
   - The pattern extends beyond the pricing variables; see D-017.
-- **Not concluded:** whether this is target leakage, an artefact of how the dataset was assembled, or something else. Step 3 of the plan and the treatment remain **Open (Stage 3)**. Nothing was removed, imputed or transformed because of this finding.
+- **Not concluded (Stage 2):** whether this is target leakage, an artefact of how the dataset was assembled, or something else. Nothing was removed, imputed or transformed because of this finding.
+- **Stage 3, step 3 (availability at the prediction point):**
+  - **FACT** (`notebooks/01_eda.ipynb`, sections 3.1 and 5): when the three pricing variables are present, the default rate is close to 0% in every decile. Their predictive power comes almost entirely from *whether* they are recorded, not from their values.
+  - **ASSUMPTION:** in a real lending process, the rate, spread and fees are set at or before origination, so they would exist for every approved loan. A record where they are missing only for loans that later defaulted does not reflect the application process. It more likely reflects how the dataset was assembled, or data recorded after the outcome. The cause cannot be verified without documentation.
+  - **Treatment:** the three variables are excluded from the main model (D-017).
 
 ### D-012 Logistic regression is the primary model
 - **Type:** MODELLING CHOICE
@@ -145,16 +160,16 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 
 ### D-016 Use of `Gender` (and possibly `age`) as a model feature
 - **Type:** MODELLING CHOICE
-- **Status:** Open (Stage 5)
+- **Status:** Agreed (decided after Stage 3)
 - **Issue:** Using protected characteristics such as sex in credit decisions is legally and ethically sensitive in the EU. Even when a variable is predictive, a bank would need a strong justification and a legal review.
 - **Options:**
   - (a) Exclude `Gender` from the model and keep it only for descriptive analysis.
   - (b) Include it and document the concern.
-- **Leaning:** (a). The decision will be made explicitly in Stage 5.
+- **Decision:** (a). `Gender` is excluded from all models and may be used only for descriptive analysis. `age` is also excluded from the main model, for the D-017 reason (its 200 missing values are all defaults), so its sensitivity does not need a separate decision.
 
 ### D-017 Variables whose missingness or category almost perfectly separates `Status`
-- **Type:** FACT (the pattern). Its cause and treatment are still Open.
-- **Status:** Open (Stage 3 investigation; any treatment is a Stage 5 MODELLING CHOICE)
+- **Type:** FACT (the pattern); the treatment is a MODELLING CHOICE. The cause remains unknown.
+- **Status:** Agreed (treatment decided after the Stage 3 investigation; applied in Stage 5)
 - **Finding (Stage 2):** Beyond the pricing variables in D-011, several fields have a missing value or category whose default rate is 100% or close to it. Sources: `artifacts/dq_missingness.csv` and `artifacts/dq_categorical_levels.csv`.
 
   | Indicator | Rows | Default rate | Default rate otherwise |
@@ -170,8 +185,27 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 
 - **Why it matters:** A model given these fields could look almost perfect without learning anything about borrower risk. If the fields are only filled in (or only left empty) *after* the loan's outcome is known, using them would be **target leakage**. At the moment of the credit decision, the model would not have that information.
 - **Possible explanations (none is assumed):** the defaulted and non-defaulted records may come from different source systems or extraction processes; the fields may be recorded after the outcome; or the pattern may be genuine but specific to this dataset.
-- **Related open point:** the `Interest_rate_spread` on the D-009 row (`ID` 61162) is probably derived from the invalid zero rate. Whether to also set it to missing is left for Stage 3, together with the other decisions in this entry.
+- **Related point:** the `Interest_rate_spread` on the D-009 row (`ID` 61162) is probably derived from the invalid zero rate. This no longer needs a decision, because the spread is excluded from the main model (below).
 - **Stage 2 action:** None. No variable was removed, imputed or recoded because of this finding.
+- **Stage 3 evidence (FACT; `notebooks/01_eda.ipynb`, section 5):**
+  - Every default has at least one of `rate_of_interest`, `Interest_rate_spread`, `Upfront_charges`, `dtir1`, `property_value` or `income` missing. The 101,333 rows where all six are present contain **no** defaults. So no subset of rows is free of the pattern, and the problem can only be handled by choosing columns.
+  - The 200 defaults that do have an interest rate are exactly the rows with `age` and `submission_of_application` missing. All of them are EQUI with `dtir1` missing.
+  - Differences in default rate between category levels remain after the EQUI records are set aside (section 3.2; for example `loan_type` ranges from 14.4% to 25.8%). The categorical variables therefore appear to carry signal beyond the leakage pattern.
+  - *Correction:* a Stage 3 draft compared category default rates with each level's share of missing `rate_of_interest`. That comparison is circular, because a missing rate is almost identical to `Status = 1`, so it was replaced by the comparison outside EQUI.
+- **Decision (options A + C):**
+  - **Admissibility rule for the main model:** a field is used only if it would be captured for every applicant at the time of the credit decision, **and** its values or missingness are not driven by the outcome. The rule is applied consistently, whatever the number of rows affected. Imputation cannot repair missingness that is caused by the outcome, so these fields are excluded rather than imputed.
+  - **Excluded under this rule:**
+    - `rate_of_interest` / `rate_of_interest_clean`, `Interest_rate_spread` and `Upfront_charges` (D-011);
+    - `credit_type` (EQUI is 99.99% default);
+    - `property_value` / `property_value_clean` / `LTV` / `LTV_clean` (missing: 99.99% default);
+    - `dtir1` (missing: 67.6% default vs 16.3%);
+    - `age` and `submission_of_application` (missing: 100% default);
+    - raw `income` (replaced by `income_clean`, D-008).
+  - **Kept:** fields whose missing values default at close to the portfolio rate (`loan_limit`, `approv_in_adv`, `loan_purpose`, `Neg_ammortization`, `term`). Their missing values are handled inside the model pipeline in Stage 5.
+  - **Main model candidates (16, before Stage 5 screening):** `config.MAIN_MODEL_CANDIDATE_FEATURES`. Every excluded column and its reason is in `config.EXCLUDED_FROM_MAIN_MODEL`, and `tests/test_config.py` checks that together they cover every processed column exactly once.
+  - **Leakage demonstration (option C):** a separate full-feature model, clearly labelled as a leakage demonstration. It is never used for risk grades, the dashboard or reported PDs.
+- **Main limitation (ASSUMPTION about real practice):** a mortgage PD model without LTV and DTI lacks its core risk drivers, and would not pass a conceptual-soundness review for production use. In a real bank, this would be raised as a data-quality finding with the data owner, and the missing values would be requested from the source systems. That is not possible here. The main model is therefore a prototype built on data that failed its fitness-for-use check, and it is documented as such.
+- **For Stage 5 screening (not decided):** `lump_sum_payment = lpsm` (3,384 rows) defaults at 77.7%, and at 65.9% outside EQUI. That is high, but not near-perfect, and it is plausible for balloon-payment products. It stays a candidate and is reviewed during screening.
 
 ### D-018 Categorical values are kept exactly as recorded
 - **Type:** MODELLING CHOICE (for Stage 2); the observations below are FACT
@@ -188,6 +222,21 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - **No whitespace problems** were found in any text value.
   - **Missing categories:** `loan_limit` (3,344), `approv_in_adv` (908), `age` and `submission_of_application` (200), `loan_purpose` (134) and `Neg_ammortization` (121).
 - **Why:** Fixing labels is cosmetic, but merging categories or treating "Sex Not Available" as missing changes the information a model sees. Those are modelling choices and should be made with the Stage 3 evidence. Redundant columns (for example `Secured_by` next to `construction_type`) are a feature-selection question for Stage 5.
+- **Redundant columns, decided after Stage 3 (MODELLING CHOICE, Agreed; the duplication is reproduced in `notebooks/01_eda.ipynb`, section 9):**
+  - `loan_type` is kept, and `business_or_commercial` (identical to `loan_type = type2`) is excluded.
+  - `construction_type`, `Secured_by` and `Security_Type` are all excluded. They are almost constant, and their single rare level (33 rows) is 100% default, which matches the D-017 leakage pattern.
+  - `Gender`, including "Sex Not Available", is excluded under D-016, so how that label is coded no longer matters for the model.
+  - Label clean-ups (the "Indriect" spelling, `Region` capitalisation) remain unnecessary: none of the affected columns is a model candidate except `Region`, where capitalisation does not change the levels.
+
+### D-019 `Credit_Score` has no ranking power and is excluded from the main model
+- **Type:** FACT (the finding); MODELLING CHOICE (the exclusion)
+- **Status:** Agreed (decided after Stage 3)
+- **Stage 3 evidence (FACT; `notebooks/01_eda.ipynb`, section 8):**
+  - `Credit_Score` takes integer values from 500 to 900, spread evenly. A chi-square test of uniformity over the 401 values gives p = 0.86, so uniformity is not rejected.
+  - Used directly as a score, it has an AUC of 0.503, and the default rate is flat across its deciles.
+  - Its largest absolute Spearman correlation with any other numeric column is below 0.01.
+- **Decision:** excluded from the main model, because it fails univariate screening.
+- **Not claimed:** why the column behaves like this. Whether it is synthetic or on an unknown scale cannot be established from the data. A real bureau score ranks risk, so in a real bank a score with no signal would trigger a data investigation. It is recorded as a data limitation.
 
 ---
 

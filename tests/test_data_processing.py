@@ -33,6 +33,7 @@ def toy_raw() -> pd.DataFrame:
     df["property_value"] = [250_000, 8_000, np.nan, 10_000]    # row 2 below threshold, row 4 at it
     df["LTV"] = 100 * df["loan_amount"] / df["property_value"]
     df["rate_of_interest"] = [4.0, 0.0, np.nan, -1.0]           # rows 2 and 4 non-positive
+    df["income"] = [5_000.0, 0.0, np.nan, 600.0]                # row 2 zero
     return df
 
 
@@ -82,12 +83,20 @@ def test_ltv_clean_is_recomputed_from_clean_property_value(toy_raw):
     assert ltv.iloc[3] == pytest.approx(3_000.0)
 
 
+def test_cleaning_sets_zero_income_to_missing(toy_raw):
+    # D-008: income <= 0 becomes NaN; positive and already-missing values are unchanged
+    clean = dp.apply_cleaning_rules(toy_raw)
+    income = clean[config.INCOME_CLEAN_COL]
+    assert income.iloc[0] == 5_000.0 and income.iloc[3] == 600.0
+    assert income.iloc[1:3].isna().all()
+
+
 def test_cleaning_keeps_rows_and_raw_columns(toy_raw):
     original = toy_raw.copy()
     clean = dp.apply_cleaning_rules(toy_raw)
     assert len(clean) == len(toy_raw)
     pd.testing.assert_frame_equal(toy_raw, original)  # input not mutated
-    for col in ["property_value", "rate_of_interest", "LTV"]:
+    for col in ["property_value", "rate_of_interest", "LTV", "income"]:
         pd.testing.assert_series_equal(clean[col], original[col])
 
 
@@ -190,6 +199,8 @@ def test_pipeline_creates_loadable_processed_dataset(tmp_path):
     assert newly_missing_rate.sum() == (raw["rate_of_interest"] <= 0).sum()
     newly_missing_pv = reloaded[config.PROPERTY_VALUE_CLEAN_COL].isna() & raw["property_value"].notna()
     assert newly_missing_pv.sum() == (raw["property_value"] < config.PROPERTY_VALUE_MIN_VALID).sum()
+    newly_missing_income = reloaded[config.INCOME_CLEAN_COL].isna() & raw["income"].notna()
+    assert newly_missing_income.sum() == (raw["income"] <= config.INCOME_MIN_EXCLUSIVE).sum() == 1_260
 
     for name in ["dq_summary", "dq_missingness", "dq_categorical_levels", "dq_numeric_profile"]:
         assert (tmp_path / f"{name}.csv").exists()
