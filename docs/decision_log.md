@@ -149,6 +149,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Status:** Agreed (Stage 5)
 - **Decision:** 70% development/training set, with 5-fold cross-validation performed only within the development/training set, and a 30% final hold-out test set used once for final evaluation. The split is stratified on `Status`, with `RANDOM_SEED = 42` (`TEST_SIZE = 0.30`, `CV_FOLDS = 5` in `src/config.py`). All learned preprocessing (imputation, scaling, encoding, binning) is fitted on the development/training data only, inside a scikit-learn Pipeline.
 - **Why:** Stratification keeps the default rate equal in both samples. Cross-validation inside the development/training set is used for model development without touching the hold-out test set, so the final hold-out result remains an unbiased estimate. Fitting only on development/training data prevents information from the hold-out test set leaking into the model. This is **out-of-sample**, not out-of-time, validation (see D-004).
+- **Implementation (Stage 4, D-020):** the split is made once by `src/db.py` and stored in DuckDB as the table `sample_split` (`ID` → `development` / `holdout`). Later stages read it from there instead of re-splitting.
 
 ### D-014 Risk grades are illustrative internal grades for this project
 - **Type:** MODELLING CHOICE
@@ -242,6 +243,28 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - Its largest absolute Spearman correlation with any other numeric column is below 0.01.
 - **Decision:** excluded from the main model, because it fails univariate screening.
 - **Not claimed:** why the column behaves like this. Whether it is synthetic or on an unknown scale cannot be established from the data. A real bureau score ranks risk, so in a real bank a score with no signal would trigger a data investigation. It is recorded as a data limitation.
+
+### D-020 DuckDB is the single data source for Stages 5 to 9, with a stored sample split
+- **Type:** MODELLING CHOICE (the split sizes and default rates are FACT)
+- **Status:** Agreed (implemented in Stage 4)
+- **Decision:**
+  - `src/db.py` loads `loans_clean.parquet` into `data/processed/credit_risk.duckdb` (gitignored).
+  - The D-013 split is made once, with scikit-learn `train_test_split` (stratified on `Status`, `TEST_SIZE`, `RANDOM_SEED`), and stored as the table `sample_split`. The IDs are sorted first, so the split does not depend on row order.
+  - The view `model_dataset` (`sql/model_dataset.sql`) contains only `ID`, `sample`, `Status` and the 16 D-017 candidate features. The model reads its data from this view, so an excluded column cannot reach it by accident.
+  - The SQL analyses in `sql/` write aggregate tables to `artifacts/sql_*.csv`.
+- **Why:** a bank records which loans were used for development and which for validation as a flag on the data, so every later step (validation, grades, monitoring, dashboard) uses exactly the same samples. Recreating the split in each stage would depend on everyone using the same call, seed and row order. The split method itself is unchanged (D-013).
+- **Stage 4 evidence (FACT; `tests/test_db.py`):**
+  - development 104,069 loans (25,647 defaults, 24.644%); hold-out 44,601 loans (10,992 defaults, 24.645%);
+  - rebuilding the database gives an identical split;
+  - the SQL missingness table (`sql/dq_missingness.sql`) reproduces the pandas table `artifacts/dq_missingness.csv` for every column, so the D-011 / D-017 evidence is confirmed by a second, independent implementation.
+
+### D-021 Segments with fewer than 10 loans are not written to the SQL segment tables
+- **Type:** HEURISTIC (a small-cell rule of thumb for this project, not a regulatory standard)
+- **Status:** Agreed (implemented in Stage 4)
+- **Issue (FACT, Stage 4):** before this rule, `artifacts/sql_portfolio_by_segment.csv` had 3 rows with a single loan (rare `term` values 165, 280 and 322 months). Such a row shows that one loan's amount and whether it defaulted, which is in effect a row-level record in a committed file.
+- **Decision:** `sql/portfolio_by_segment.sql` and `sql/risk_segment_crosses.sql` leave out segments with fewer than `config.SQL_MIN_SEGMENT_SIZE = 10` loans. Shares are computed over all loans **before** the filter, so the rows shown are unchanged. The hidden rows are the reason the shown shares of a column can add up to slightly less than 1. The `risk_deciles` bins are far above the threshold, and a test checks all three tables.
+- **Effect (FACT):** 4 `term` levels (1 to 8 loans each) are hidden from the portfolio table, and 6 rows from the crosses table. The data itself is not changed; the rule only affects what is written to `artifacts/`.
+- **Why:** hiding small cells is common practice in published aggregate reports. The value 10 is a judgement call, chosen low enough to keep every real segment of interest.
 
 ---
 

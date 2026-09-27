@@ -31,6 +31,8 @@ def test_agreed_data_quality_thresholds():
     assert config.PROPERTY_VALUE_MIN_VALID == 10_000
     assert config.RATE_OF_INTEREST_MIN_EXCLUSIVE == 0.0
     assert config.INCOME_MIN_EXCLUSIVE == 0.0
+    # D-021: small-cell rule for the committed SQL segment tables
+    assert config.SQL_MIN_SEGMENT_SIZE == 10
 
 
 def test_main_model_feature_scope_covers_every_column_once():

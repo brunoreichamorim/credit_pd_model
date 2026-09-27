@@ -91,7 +91,33 @@ Raw CSV → data-quality checks & cleaning → Parquet → DuckDB / SQL → mode
 **Sampling design (decision [D-013](docs/decision_log.md)):** 70% development/training set, with 5-fold cross-validation performed only within the development/training set, and a 30% final hold-out test set used once for final evaluation. This is out-of-sample, not out-of-time, validation.
 
 ## 6. SQL layer
-*Stage 4.*
+**Stage 4** (`src/db.py`, queries in [`sql/`](sql/)):
+
+```bash
+python -m src.db    # needs data/processed/loans_clean.parquet from Stage 2
+```
+
+DuckDB is the single data source for the later stages (decision [D-020](docs/decision_log.md)). The database `data/processed/credit_risk.duckdb` (gitignored) holds:
+
+| Object | Content |
+|---|---|
+| `loans_clean` | the processed Parquet, loaded as a table |
+| `sample_split` | `ID` → `development` / `holdout`: the D-013 split, made once (stratified on `Status`, seed 42) |
+| `model_dataset` | view with `ID`, `sample`, `Status` and **only** the 16 admissible features (D-017) |
+
+The SQL files compute aggregate tables, saved as `artifacts/sql_*.csv`:
+- `dq_reconciliation`, `dq_missingness`: the Stage 2 data-quality figures, recomputed in SQL (`UNPIVOT` over missing-value flags). Tests check that they match the pandas pipeline exactly.
+- `portfolio_by_segment`: loans, exposure, and count-based and amount-weighted default rates by `loan_type`, `loan_purpose`, `Region`, `occupancy_type` and `term`.
+- `risk_deciles`: default rate by equal-count bins (`NTILE`) of `loan_amount` and `income_clean`, for all loans and for loans outside `credit_type = EQUI`.
+- `risk_segment_crosses`: default rates for two-way combinations of admissible features, for the same two populations.
+- `split_summary`: size and default rate of each sample.
+
+Segments with fewer than 10 loans are left out of the segment tables, so no committed row describes a single borrower (D-021).
+
+**Verified facts (Stage 4):**
+- Development sample: 104,069 loans, 24.644% default rate. Hold-out sample: 44,601 loans, 24.645%.
+- Outside EQUI, the default rate falls from 30.3% in the lowest `income_clean` decile to 10.9–12.2% in the top three, and from 24.1% in the lowest `loan_amount` decile to 12.2% in the ninth (15.4% in the tenth).
+- For `loan_type = type2`, the amount-weighted default rate is 32.0%, against a count-based 34.5%. The smaller type2 loans default more often.
 
 ## 7. PD model
 *Stage 5.*
@@ -131,6 +157,7 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 python -m src.data_processing    # needs data/raw/Loan_Default.csv
+python -m src.db                 # builds the DuckDB database and sql_*.csv tables
 pytest                           # tests on the raw file are skipped if it is absent
 ```
 
@@ -157,7 +184,7 @@ credit_pd_model/
 | 1 | Project structure & environment | ✅ |
 | 2 | Data pipeline (cleaning → Parquet) | ✅ |
 | 3 | Exploratory data analysis & data-quality investigation | ✅ |
-| 4 | SQL / DuckDB layer | ⏳ |
+| 4 | SQL / DuckDB layer | ✅ |
 | 5 | Baseline logistic regression PD model | ⏳ |
 | 6 | Validation & calibration | ⏳ |
 | 7 | Illustrative risk grades | ⏳ |

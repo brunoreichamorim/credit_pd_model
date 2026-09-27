@@ -149,6 +149,35 @@ EDA_NUMERIC_COLUMNS = [
 EDA_N_BINS = 10  # deciles for default-rate-by-bin tables
 EDA_MIN_LEVEL_SHARE = 0.01  # HEURISTIC, display only: levels below 1% of rows are left out of range charts
 
+# ---------------------------------------------------------------------------
+# Stage 4 SQL / DuckDB layer  (src/db.py, sql/*.sql; decision log D-020)
+# ---------------------------------------------------------------------------
+# DuckDB objects. The SQL files use these names literally; tests/test_db.py
+# checks that the built database matches them.
+LOANS_TABLE = "loans_clean"          # the processed Parquet, loaded as a table
+SPLIT_TABLE = "sample_split"         # ID -> sample, the D-013 split made once
+MODEL_DATASET_VIEW = "model_dataset"  # ID, sample, Status + the D-017 candidate features
+
+# Sample labels stored in SPLIT_TABLE (D-013).
+SAMPLE_DEVELOPMENT = "development"  # 70%: model fitting and 5-fold CV
+SAMPLE_HOLDOUT = "holdout"          # 30%: final evaluation, used once
+
+SQL_N_BINS = 10  # equal-count bins (NTILE) in sql/risk_deciles.sql
+EQUI_LEVEL = "EQUI"  # credit_type level used only to show results "outside EQUI" (D-017)
+SQL_ARTIFACT_PREFIX = "sql_"  # aggregate SQL result tables: artifacts/sql_*.csv
+# D-021 (HEURISTIC): segments with fewer loans than this are not written to the
+# committed segment tables, because a row that small describes (almost) a single
+# borrower. A small-cell rule of thumb, not a regulatory standard.
+SQL_MIN_SEGMENT_SIZE = 10
+
+# Segments in sql/portfolio_by_segment.sql and sql/risk_segment_crosses.sql.
+PORTFOLIO_SEGMENT_COLUMNS = ["loan_type", "loan_purpose", "Region", "occupancy_type", "term"]
+SEGMENT_CROSSES = [
+    ("loan_type", "loan_purpose"),
+    ("loan_type", "occupancy_type"),
+    ("Region", "loan_type"),
+]
+
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150
 COLOR_PRIMARY = "#2a78d6"    # single series / first series
