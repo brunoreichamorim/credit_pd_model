@@ -52,7 +52,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 
 ### D-005 `property_value < 10,000` is treated as invalid (set to missing, rows kept)
 - **Type:** HEURISTIC (an investigation threshold for this dataset, not an industry or regulatory rule)
-- **Status:** Agreed; implemented in Stage 2 as `property_value_clean` (raw `property_value` kept unchanged); to be reassessed in Stage 3
+- **Status:** Agreed; implemented in Stage 2 as `property_value_clean` (raw `property_value` kept unchanged); reassessed in Stage 3 with no change
 - **Decision:** Values below 10,000 are set to missing. The rows are **not** deleted.
 - **Why:** The earlier investigation found property values such as 8,000 attached to loans of several hundred thousand, which produce LTVs around 7,800%. These look like data-entry or unit errors rather than real collateral values. Values such as 28,000 to 48,000 can be legitimate depending on the loan amount, so the threshold is set low on purpose.
 - **Rejected alternative:** "LTV > 200% → remove". That rule is arbitrary, deletes information about the borrower, and would remove genuinely high-LTV (high-risk) loans, which biases the default rate downwards.
@@ -62,6 +62,11 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - **What they look like:** loan amounts from 186,500 to 626,500 and raw LTVs from 2,331% to 7,831%. All 6 also have `income` missing. Five have `Status = 0`, one has `Status = 1`.
   - **Isolated, not systematic:** the next distinct values are 18,000 (1 row, loan 16,500, LTV 91.7%, which is plausible) and 28,000 (9 rows). Above the 8,000 rows, the next-highest raw LTV is 263.5%, which leaves a large gap. The threshold therefore isolates exactly the 8,000 value.
   - **Rounding pattern:** every `property_value` ends in 8,000 (…8,000, 18,000, 28,000, …) and every `loan_amount` ends in 6,500. This suggests the values were rounded or binned before publication (ASSUMPTION about why), so 8,000 is best read as "the lowest bucket", not an exact valuation.
+- **Stage 3 reassessment (FACT; `notebooks/01_eda.ipynb`, section 10):** the "revisit" condition is **not** met.
+  - The 30 lowest distinct values are spaced exactly 10,000 apart, and the row counts rise smoothly from 18,000 upwards (1, 9, 35, 71, 141 rows, …). There is no break at any other point.
+  - Only the 8,000 value produces implausible LTVs (2,331% to 7,831%). The highest raw LTV among all other rows is 263.5%, which is also the maximum of `LTV_clean`.
+  - **Result:** the threshold isolates exactly that cluster, so it stays unchanged.
+- **Scope after Stage 3:** `property_value` and LTV are excluded from the main model (D-017), so this rule now affects only the leakage demonstration model and the descriptive analysis.
 
 ### D-006 LTV is recomputed as `LTV_clean`
 - **Type:** MODELLING CHOICE
