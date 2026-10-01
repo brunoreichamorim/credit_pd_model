@@ -126,28 +126,53 @@ Segments with fewer than 10 loans are left out of the segment tables, so no comm
 python -m src.model    # needs the DuckDB database from Stage 4 (python -m src.db)
 ```
 
-Fitted only on the development sample (D-013), with 5-fold stratified cross-validation. All preprocessing (imputation, scaling, one-hot encoding) is fitted inside a scikit-learn Pipeline, on training folds only.
+Fitted only on the development sample (D-013), and only on loans inside the model's scope: loans with `credit_type = EQUI` (99.99% default) are left out of the model's population, but not deleted from the data (decision D-026, made after the first Stage 6 look). That leaves 93,391 development loans with a 16.0% default rate. The model uses 5-fold stratified cross-validation. All preprocessing (imputation, scaling, one-hot encoding) is fitted inside a scikit-learn Pipeline, on training folds only.
 
 **Feature screening (decision D-022).** Of the 16 D-017 candidates, `term` and `co-applicant_credit_type` are dropped for cause -- `term`'s only real signal is an unexplained cell (`term = 300` with `Neg_ammortization`, 579 loans defaulting at 91.4% outside EQUI), and `co-applicant_credit_type` is a proxy for `credit_type = EQUI` whose effect direction reverses once EQUI is excluded. The remaining 10 candidates are screened by Information Value (outside EQUI); 6 pass:
 
 | Feature | Coefficient | Direction |
 |---|---:|---|
-| `income_clean` | -0.284 | higher income -> lower PD |
-| `lump_sum_payment = lpsm` | +2.516 | balloon payment -> higher PD |
-| `Neg_ammortization = neg_amm` | +1.096 | negative amortisation -> higher PD |
-| `loan_type = type2` (business/commercial) | +0.497 | higher PD |
-| `loan_purpose = p2` | +0.356 | higher PD |
-| `loan_amount` | +0.062 | see note below |
+| `income_clean` | -0.415 | higher income -> lower PD |
+| `lump_sum_payment = lpsm` | +2.490 | balloon payment -> higher PD |
+| `Neg_ammortization = neg_amm` | +1.172 | negative amortisation -> higher PD |
+| `loan_type = type2` (business/commercial) | +0.606 | higher PD |
+| `loan_purpose = p2` | +0.361 | higher PD |
+| `loan_amount` | +0.117 | see note below |
 
-**Cross-validation results (mean over 5 folds, development sample):** AUC 0.651, Gini 0.301, KS 0.239, Brier 0.171. The feature screen used the whole development sample, so these are slightly optimistic; the Stage 6 hold-out is the unbiased check (D-022).
+**Cross-validation results (mean over 5 folds, in-scope development sample):** AUC 0.675, Gini 0.349, KS 0.273, Brier 0.123. The feature screen used the whole development sample, so these are slightly optimistic; the Stage 6 hold-out is the out-of-sample check (D-022, D-025).
 
 **`loan_amount` changes sign in the model.** On its own, a larger loan goes with a *lower* default rate, because larger loans go to higher-income borrowers. With `income_clean` in the model (the two are correlated at about 0.63 in log scale), the coefficient is small and positive: for the same income, a larger loan means higher leverage. It is kept, and the reasoning is recorded in D-023. The coefficient table still flags the mismatch with the univariate prior rather than hiding it.
 
-**Leakage demonstration (option C, decision D-024).** A full model that adds back every D-017-excluded field, with their missing values kept visible, reaches a mean CV AUC of **1.000**, and so does a model built from *only* the missing-value indicators of those fields (plus `credit_type`). This shows concretely how a model that ignored the D-017 investigation would look almost perfect while learning nothing about borrower risk. Neither leakage model is used for risk grades, monitoring or the dashboard.
+**Leakage demonstration (option C, decision D-024).** A full model that adds back every D-017-excluded field, with their missing values kept visible, reaches a mean CV AUC of **1.000** on all development rows (EQUI included), and so does a model built from *only* the missing-value indicators of those fields (plus `credit_type`). This shows concretely how a model that ignored the D-017 investigation would look almost perfect while learning nothing about borrower risk. Neither leakage model is used for risk grades, monitoring or the dashboard.
 
 
 ## 8. Validation
-*Stage 6.*
+**Stage 6** (`src/holdout.py`, metric functions in `src/validation.py`, SQL in `sql/validation_*.sql`, notebook [`03_validation.ipynb`](notebooks/03_validation.ipynb)):
+
+```bash
+python -m src.holdout    # needs the Stage 4 database and the Stage 5 model (python -m src.model)
+```
+
+The frozen Stage 5 model scores the in-scope part of the 30% hold-out: 39,981 loans. The 4,620 EQUI hold-out loans, which all defaulted, are counted but not scored (D-026). The pass/fail thresholds were written down before the first scoring (decision [D-025](docs/decision_log.md)); they are heuristics for this project, not regulatory standards. Results are in `artifacts/validation_*.csv`.
+
+**Why the hold-out was looked at twice.** In the first look, the model was fitted on all development loans:
+- Over all loans it looked well calibrated: mean PD 24.7% against an observed 24.6%.
+- But that was two errors cancelling out. EQUI loans got a PD of about 30% and all defaulted, while every other loan was over-predicted (24.1% against 15.9%).
+- The same bias was already visible in the development data.
+
+The model was therefore refitted outside EQUI and the hold-out evaluated again (D-026). Because of this second look, the figures below are not a fully unbiased estimate.
+
+**Hold-out results (in scope; out-of-sample, not out-of-time):**
+- AUC 0.670 (95% bootstrap interval 0.662 to 0.678), Gini 0.341, KS 0.267, Brier 0.122. The cross-validation AUC was 0.675.
+- Mean PD is 16.0% against an observed 15.9%, with a calibration slope of 1.01.
+- Of the four pre-set criteria, three are green. One is amber: the largest gap between predicted and observed default rate in a PD decile is 2.5 pp (limit for green: 2 pp).
+- The model under-predicts for the largest loans and the highest incomes, each top decile by about 3.5 pp. Both gaps are inside the amber limit, and they are accepted as a documented limitation (D-023).
+- Coefficients refitted on the hold-out, as a diagnostic only, keep their sign for 9 of 10 terms. The exception, `loan_purpose = p4`, is not significant in either sample.
+![ROC curve and KS on the in-scope hold-out](reports/figures/09_roc_ks.png)
+
+![Calibration by PD decile on the in-scope hold-out](reports/figures/10_calibration_deciles.png)
+
+![Calibration by loan_amount and income_clean decile](reports/figures/11_calibration_by_feature.png)
 
 ## 9. Illustrative risk grades
 *Stage 7.*
@@ -164,6 +189,9 @@ Fitted only on the development sample (D-013), with 5-fold stratified cross-vali
 - `year` is 2019 for every loan, so the dataset has no genuine time dimension and true out-of-time validation is not possible (D-004).
 - Several variables are missing almost only for defaulted loans, and are excluded from the main model (D-011, D-017). This includes LTV and debt-to-income, the core mortgage risk drivers. The main model is therefore a prototype built on data that failed its fitness-for-use check. In a real bank, the data would be sent back to its owner for remediation.
 - `Credit_Score` carries no ranking power in this dataset (D-019).
+- The model covers only loans outside `credit_type = EQUI` (D-026). It says nothing about EQUI loans, which all defaulted.
+- The hold-out was evaluated twice, before and after the D-026 refit, so the hold-out results are not a fully unbiased estimate (D-025).
+- The model under-predicts in the top `loan_amount` and `income_clean` deciles by about 3.5 pp, and for `loan_purpose = p2` by 4.3 pp (D-023, D-025).
 
 ## 13. Technologies
 Python 3.11 · pandas · DuckDB (SQL) · scikit-learn · statsmodels · matplotlib · Plotly · Streamlit · pytest
@@ -210,7 +238,7 @@ credit_pd_model/
 | 3 | Exploratory data analysis & data-quality investigation | ✅ |
 | 4 | SQL / DuckDB layer | ✅ |
 | 5 | Baseline logistic regression PD model | ✅ |
-| 6 | Validation & calibration | ⏳ |
+| 6 | Validation & calibration | ✅ |
 | 7 | Illustrative risk grades | ⏳ |
 | 8 | Monitoring (PSI / stability) | ⏳ |
 | 9 | Streamlit dashboard | ⏳ |

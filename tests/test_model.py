@@ -97,6 +97,18 @@ def test_loaders_return_rows_ordered_by_id(toy_con):
         assert df[config.ID_COL].is_monotonic_increasing
 
 
+def test_equi_rows_never_reach_the_model_fit(toy_con):
+    # D-026: mark some toy loans as EQUI; the development loader must leave them out,
+    # while the screening loader (which compares in and outside EQUI) keeps them
+    toy_con.execute(f"UPDATE {config.LOANS_TABLE} SET credit_type = '{config.EQUI_LEVEL}' WHERE ID <= 30")
+    dev = model.load_development_data(toy_con)
+    assert len(dev) > 0
+    assert dev[config.ID_COL].min() > 30
+    screening = model.load_screening_data(toy_con)
+    assert (screening["credit_type"] == config.EQUI_LEVEL).any()
+    assert "credit_type" not in dev.columns
+
+
 def test_check_rare_levels_passes_on_the_toy_data(toy_dev):
     model.check_rare_levels(toy_dev)  # does not raise: no level is this rare by design
 

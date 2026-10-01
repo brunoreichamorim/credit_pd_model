@@ -5,6 +5,8 @@ DuckDB is the single data source for the later stages (decision log D-020):
     loans_clean     the processed Parquet from Stage 2, loaded as a table
     sample_split    ID -> "development" / "holdout", the D-013 split made once
     model_dataset   view with ID, sample, Status and only the 16 D-017 candidate features
+    model_scope_dataset  model_dataset without credit_type = EQUI: the main model's
+                         population (D-026)
     leakage_demo_dataset  view that adds back the D-017-excluded fields, for the
                           Stage 5 leakage demonstration only (D-024)
 
@@ -13,7 +15,7 @@ Steps (each is a separate function so it can be tested on its own):
     connect                    open (or create) the DuckDB database file
     load_loans                 load data/processed/loans_clean.parquet into DuckDB
     assign_sample_split        stratified 70/30 split on Status, seed 42 (D-013)
-    create_model_dataset_view  sql/model_dataset.sql
+    create_model_dataset_view  sql/model_dataset.sql and sql/model_scope_dataset.sql
     create_leakage_demo_view   sql/leakage_demo_dataset.sql
     run_query                  run one sql/<name>.sql file and return its result
     run_analyses               all aggregate SQL analyses, keyed by output name
@@ -122,8 +124,10 @@ def run_query(con: duckdb.DuckDBPyConnection, name: str, **params) -> pd.DataFra
 
 
 def create_model_dataset_view(con: duckdb.DuckDBPyConnection) -> None:
-    """Create the model_dataset view (sql/model_dataset.sql, D-017 feature scope)."""
+    """Create the model_dataset view (sql/model_dataset.sql, D-017 feature scope) and,
+    on top of it, the model_scope_dataset view (sql/model_scope_dataset.sql, D-026)."""
     con.execute(read_sql("model_dataset"))
+    con.execute(read_sql("model_scope_dataset"))
 
 
 def create_leakage_demo_view(con: duckdb.DuckDBPyConnection) -> None:

@@ -1,0 +1,5 @@
+sample,scope,n_loans,n_defaults,observed_rate
+development,in_scope,93391,14970.0,0.160294
+development,out_of_scope_EQUI,10678,10677.0,0.999906
+holdout,in_scope,39981,6372.0,0.159376
+holdout,out_of_scope_EQUI,4620,4620.0,1.0

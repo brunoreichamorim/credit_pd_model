@@ -99,6 +99,17 @@ def test_model_dataset_contains_only_admissible_features(toy_con):
     assert set(view["sample"]) == {config.SAMPLE_DEVELOPMENT, config.SAMPLE_HOLDOUT}
 
 
+def test_model_scope_view_leaves_out_exactly_the_equi_loans(toy_con):
+    # D-026: IDs 1-2 are EQUI in the toy data; the scope view drops them and nothing else
+    scope = toy_con.execute(f"SELECT * FROM {config.MODEL_SCOPE_VIEW}").df()
+    full = toy_con.execute(f"SELECT * FROM {config.MODEL_DATASET_VIEW}").df()
+    assert list(scope.columns) == list(full.columns)  # credit_type is not added as a column
+    assert set(full[config.ID_COL]) - set(scope[config.ID_COL]) == {1, 2}
+    assert len(scope) == N_TOY - 2
+    # the SQL file hard-codes the level; it must match config
+    assert f"'{config.EQUI_LEVEL}'" in db.read_sql("model_scope_dataset")
+
+
 def test_leakage_demo_view_matches_config(toy_con):
     # D-024: the SQL view lists its columns literally; they must match config exactly
     view = toy_con.execute(f"SELECT * FROM {config.LEAKAGE_DEMO_VIEW}").df()

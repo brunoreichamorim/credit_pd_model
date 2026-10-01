@@ -1,0 +1,5 @@
+metric,estimate,ci_lower,ci_upper,population
+auc,0.670266,0.662017,0.678433,holdout_in_scope
+gini,0.340532,0.324034,0.356866,holdout_in_scope
+ks,0.266746,0.255827,0.281281,holdout_in_scope
+brier,0.122205,0.119999,0.124531,holdout_in_scope

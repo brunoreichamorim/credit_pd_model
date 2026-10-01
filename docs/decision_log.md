@@ -214,6 +214,8 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Main limitation (ASSUMPTION about real practice):** a mortgage PD model without LTV and DTI lacks its core risk drivers, and would not pass a conceptual-soundness review for production use. In a real bank, this would be raised as a data-quality finding with the data owner, and the missing values would be requested from the source systems. That is not possible here. The main model is therefore a prototype built on data that failed its fitness-for-use check, and it is documented as such.
 - **Resolved in Stage 5 (D-022):** `lump_sum_payment = lpsm` (development sample: 76.4%, 64.4% outside EQUI) is kept in the main model. The rate holds up in the subset with every other leakage-pattern field present (64.3%) and in every `loan_type` (61-73%), and the coefficient stays strongly positive in a sensitivity fit that excludes every EQUI row -- so unlike the D-017 fields, it is not explained by the leakage pattern.
 
+- **Update after Stage 6 (D-026):** the EQUI rows are also left out of the main model's **population**, not just its features. They stay in the data and in the leakage demonstration.
+
 ### D-018 Categorical values are kept exactly as recorded
 - **Type:** MODELLING CHOICE (for Stage 2); the observations below are FACT
 - **Status:** Agreed for Stage 2; recoding or grouping categories is decided in Stage 3/5
@@ -287,11 +289,18 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Numeric transform:** `loan_amount` and `income_clean` are right-skewed (skew 1.5 and 19 on the development sample). Both are `log`-transformed, then standardised; no capping. A univariate check confirmed the log scale fits the log-odds far better than the raw scale (correlation with the binned log-odds around -0.87, against about -0.57 raw). Both variables have a mild uptick in their top ~5%, a known misfit to be checked against calibration by decile in Stage 6.
 - **Model:** unpenalised logistic regression (D-012's Stage 5 implementation note).
 - **`loan_amount`'s sign reverses in the model; kept as is (decided after Stage 5 review).**
-  - **Evidence (FACT):** the fitted coefficient is **positive** (+0.062, `sm_p_value` < 0.001, the same sign in all 5 CV folds), the opposite of its univariate direction (negative: larger loans default less often on their own). `loan_amount` and `income_clean` are correlated at about 0.63 in log scale. Fitted alone, `log(loan_amount)` has a coefficient of -0.285; adding `log(income_clean)` turns it positive.
+  - **Evidence (FACT; Stage 5 fit on all development rows, before D-026):** the fitted coefficient is **positive** (+0.062, `sm_p_value` < 0.001, the same sign in all 5 CV folds), the opposite of its univariate direction (negative: larger loans default less often on their own). `loan_amount` and `income_clean` are correlated at about 0.63 in log scale. Fitted alone, `log(loan_amount)` has a coefficient of -0.285; adding `log(income_clean)` turns it positive.
   - **Interpretation (ASSUMPTION):** the univariate effect is mostly income in disguise -- larger loans go to higher-income borrowers, who default less. Once income is held fixed, what remains in `loan_amount` is loan size *relative to income*: a larger loan for the same income means higher leverage and a higher repayment burden, which a bank would expect to raise PD. The positive sign therefore has a credit rationale. It stands in for the loan-to-income and debt-to-income information the model otherwise lacks (`dtir1` is excluded under D-017).
   - **Decision:** keep `loan_amount` unchanged. The effect is small (odds ratio 1.06 per standard deviation of log loan amount), stable across folds and interpretable. Dropping it would remove the only leverage signal left in the model.
   - **What stays visible:** `config.EXPECTED_SIGNS` keeps the univariate prior (-1), so `artifacts/model_coefficients.csv` still reports `sign_matches_expected = False` for `loan_amount`. The prior is not rewritten after seeing the result; the mismatch is explained here instead.
   - **Revisit if:** the coefficient changes sign or loses significance on the Stage 6 hold-out, or the Stage 6 calibration by `loan_amount` decile shows a misfit (see the top-5% uptick noted above).
+  - **Stage 6 outcome (FACT; D-025 second look, model fitted in scope under D-026):**
+    - After the D-026 refit the coefficient is larger: +0.117 in development, and still positive and significant on the hold-out refit (+0.100, p < 0.001). The first trigger did not fire.
+    - The top-decile misfit remains:
+      - top `loan_amount` decile under-predicted by 3.4 pp (PD 12.1%, observed 15.5%);
+      - top `income_clean` decile under-predicted by 3.5 pp (PD 8.5%, observed 12.1%).
+      Both are inside the 5 pp amber limit.
+    - **Decision (MODELLING CHOICE, Agreed; Bruno, 2026-10-01):** this does **not** count as the second trigger firing. The top-decile misfit is accepted as a documented limitation, and `loan_amount` and `income_clean` stay as single log-linear terms. Figures: `reports/figures/11_calibration_by_feature.png`, `notebooks/03_validation.ipynb`.
 
 ### D-024 Leakage-demonstration model (option C)
 - **Type:** MODELLING CHOICE
@@ -299,9 +308,72 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Decision:** two models, both scored with 5-fold CV on the development sample only, **never** on the hold-out, for risk grades, monitoring or the dashboard:
   - **Full model:** the 6 main-model features plus every D-017-excluded field in its clean version where one exists (`rate_of_interest_clean`, `Interest_rate_spread`, `Upfront_charges`, `property_value_clean`, `LTV_clean`, `dtir1`, `credit_type`, `age`, `submission_of_application`), plus `term` and `co-applicant_credit_type` (D-022). It is built on the main model's own preprocessing, so the two stay comparable. The missingness stays visible: each extra numeric field gets a missing-value indicator next to its median-imputed value, and each extra categorical field keeps missing as its own level. Uses the default L2-penalised logistic regression: with near-perfect separation, an unpenalised fit does not converge.
   - **Ablation:** only whether each of `rate_of_interest_clean`, `Interest_rate_spread`, `Upfront_charges`, `property_value_clean`, `dtir1`, `age` is missing, plus `credit_type` (`submission_of_application` is missing on exactly the same rows as `age`, so it is left out to avoid a duplicate indicator).
-- **Stage 5 evidence (FACT; `artifacts/model_cv_metrics.csv`):** mean CV AUC -- main model 0.651, full leakage model **1.000**, indicators-only ablation **1.000**. The ablation shows that missingness alone is enough for a perfect score: `Interest_rate_spread` is missing if and only if `Status = 1` (D-017), so its indicator by itself separates the target. The apparent skill comes from how the dataset was assembled, not from borrower risk.
+- **Stage 5 evidence (FACT; `artifacts/model_cv_metrics.csv`):** mean CV AUC -- main model 0.651 (all development rows; 0.675 in scope after D-026), full leakage model **1.000**, indicators-only ablation **1.000**. The ablation shows that missingness alone is enough for a perfect score: `Interest_rate_spread` is missing if and only if `Status = 1` (D-017), so its indicator by itself separates the target. The apparent skill comes from how the dataset was assembled, not from borrower risk.
 - **Correction during Stage 5 review:** a first version of the full model median-imputed the extra fields without missing indicators, which hid the very signal it was meant to demonstrate (it scored 0.858, below the ablation). It was fixed before commit.
 - **Why:** this shows concretely, on this project's own data, how a model that ignored D-017 would look almost perfect while learning nothing about borrower risk -- the central caution of the project (see README limitations).
+
+- **Note after D-026:** the leakage models still use all development rows (EQUI is part of the leakage they show), while the main model's CV now covers only in-scope rows (AUC 0.675). The contrast (1.000 against 0.675) still makes the point, but the two populations are no longer identical.
+
+### D-025 Stage 6 validation design and pre-set criteria
+- **Type:** MODELLING CHOICE; the thresholds are HEURISTIC (judgement calls for this project, not regulatory standards)
+- **Status:** Agreed (Stage 6). Written **before** the hold-out was scored.
+- **Design:**
+  - The frozen Stage 5 model (`artifacts/pd_model.joblib`) scores the 30% hold-out once. It is never refitted or changed in response to hold-out results without Bruno's approval, and any such change is logged here (the hold-out would then no longer be an unbiased estimate).
+  - Calibration: mean PD vs observed default rate (two-sided binomial test), calibration intercept and slope, a PD-decile table, and Hosmer-Lemeshow. Hosmer-Lemeshow is reported **without** a pass/fail judgement, because at about 44,000 loans it rejects even trivial misfit.
+  - Extras: results for all loans and outside `credit_type = EQUI` (`credit_type` is used only for this split, never as a feature; superseded by D-026, under which only in-scope loans are scored); 95% bootstrap intervals (1,000 resamples, seed 42); performance by `loan_type` and `loan_purpose`; calibration by `loan_amount` and `income_clean` decile.
+  - Diagnostic refit: the same features are refitted on the hold-out only to compare coefficient signs and significance with development (the D-023 trigger). The refit is never used for scoring, grades or decisions.
+  - `pd_scores` (`ID`, `sample`, `pd`) is stored in DuckDB for Stages 7 and 8. Development scores are in-sample.
+- **Pre-set criteria (whole hold-out only; `config.py`):**
+
+  | Criterion | Green | Amber | Red |
+  |---|---|---|---|
+  | CV mean AUC minus hold-out AUC | ≤ 0.02 | ≤ 0.05 | > 0.05 |
+  | Binomial test, observed defaults vs mean PD | p ≥ 0.05 | 0.01 ≤ p < 0.05 | p < 0.01 |
+  | Calibration slope | 0.90 to 1.10 | 0.80 to 1.20 | outside |
+  | Largest PD-decile gap, observed vs mean PD | ≤ 2 pp | ≤ 5 pp | > 5 pp |
+- **Implementation:** `src/holdout.py` (`python -m src.holdout`), metric functions in `src/validation.py`, SQL in `sql/validation_*.sql`, tables in `artifacts/validation_*.csv`. The runner is a separate module from `validation.py` because `model.py` already imports `validation.py`.
+- **First look at the hold-out (FACT; superseded by the second look below).** Model fitted on all development rows, scored on all 44,601 hold-out loans:
+  - hold-out AUC 0.651, against a CV mean of 0.651;
+  - mean PD 24.68% against an observed 24.65%;
+  - criteria: 3 green, 1 amber (largest PD-decile gap 3.1 pp).
+  - **But outside `credit_type = EQUI`, mean PD was 24.05% against an observed 15.94%, with every PD decile 4 to 11 pp too high.** The overall "green" calibration came from two errors that cancelled: EQUI loans were under-predicted (PD about 30%, observed 100%), and all other loans over-predicted. The error was already visible in development (in-sample, outside EQUI: PD 24.1% against observed 16.0%). This led to D-026.
+- **Second look (D-026; model refitted on in-scope development rows, scored on the 39,981 in-scope hold-out loans; `artifacts/validation_*.csv`).** The hold-out has now been looked at twice, so these figures are **not fully unbiased**. The change was structural: it chose which population is modelled, it was based on evidence already visible in development, and it was not tuned to hold-out metrics. Features, preprocessing and the criteria above are unchanged.
+  - **Discrimination:**
+    - hold-out AUC 0.670 (95% bootstrap interval 0.662 to 0.678), against a CV mean of 0.675;
+    - Gini 0.341, KS 0.267, Brier 0.122.
+  - **Calibration:** mean PD 15.97% against an observed 15.94% (binomial p = 0.86); slope 1.008; intercept -0.003.
+  - **Pre-set criteria: 3 green, 1 amber.**
+    - AUC drop 0.004: green.
+    - Binomial test: green.
+    - Slope: green.
+    - Largest PD-decile gap 2.5 pp, in decile 1 (mean PD 6.8%, observed 9.2%): amber. Decile 9 is next at 2.3 pp.
+  - **Hosmer-Lemeshow** rejects (statistic 88 on 8 df), as expected at this sample size. Not used for a judgement.
+  - **Segments:** AUC 0.64 to 0.69. The largest gap is `loan_purpose = p2` (857 loans), under-predicted by 4.3 pp. Every other level is within 1 pp.
+  - **Diagnostic coefficient refit:**
+    - 9 of 10 terms keep their sign. The exception is `loan_purpose_p4`, which is not significant in either sample (development -0.003, hold-out +0.027, p = 0.45).
+    - `income_clean`'s 95% intervals do not overlap: development -0.415, hold-out -0.350. Same direction, somewhat weaker on the hold-out.
+  - **Out of scope:** 4,620 hold-out EQUI loans (100% default) and 10,678 development EQUI loans (99.99%) are counted in `validation_scope.csv`, but not scored.
+
+### D-026 The main model's scope excludes `credit_type = EQUI`
+- **Type:** MODELLING CHOICE (the evidence is FACT)
+- **Status:** Agreed (decided after the first Stage 6 look at the hold-out)
+- **Issue (FACT):**
+  - The Stage 5 model was fitted on all development rows, including 10,678 EQUI loans (10.3%, 99.99% default), but the model cannot recognise them because `credit_type` is not a feature (D-017).
+  - It therefore under-predicted EQUI (PD about 29.5%) and over-predicted every other loan (PD 24.1% against observed 16.0%, in-sample).
+  - The coefficients were distorted as well. Refitted outside EQUI on development rows only, `income_clean` goes from -0.284 to -0.415, `loan_amount` from +0.062 to +0.117, and `loan_purpose_p1` changes sign (+0.091 to -0.172).
+  - It was also inconsistent with D-022, which screened features on evidence from outside EQUI precisely because EQUI distorts it.
+- **Options considered:**
+  - (A) leave the bias documented;
+  - (B) recalibrate only the intercept on non-EQUI loans, a patch that leaves the coefficients distorted;
+  - (C) take EQUI out of the model's population.
+- **Decision:** (C). The view `model_scope_dataset` (`sql/model_scope_dataset.sql`, `config.MODEL_SCOPE_VIEW`) is `model_dataset` without EQUI rows. Stage 5 fits on it and Stage 6 scores it; `pd_scores` holds in-scope loans only.
+  - `credit_type` is used only to decide scope; it is still never a feature.
+  - EQUI rows are not deleted. They stay in `loans_clean`, the screening tables (D-022) and the leakage demonstration (D-024), and are counted in `artifacts/validation_scope.csv`.
+- **Why:** EQUI is treated as a marker of how the dataset was assembled, not as a borrower population (D-017). A PD that is calibrated only on average across two populations it gets very wrong would not pass a bank validation review. Excluding a documented, defective sub-population from the development sample is a normal, documented model-scope choice.
+- **Unchanged:** features (D-022, and `model_screening.csv` is identical), preprocessing and reference levels (D-023; the most frequent levels are the same outside EQUI, and the rarest kept level, `lpsm`, is 1.65% of in-scope development rows, above the 1% rule), and the D-025 criteria.
+- **Stage 5 result in scope (FACT; `artifacts/model_cv_metrics.csv`, `model_coefficients.csv`):** 93,391 development loans, 16.03% default rate. Mean CV AUC 0.675, Gini 0.349, KS 0.273, Brier 0.123.
+- **Cost:** the hold-out was evaluated a second time after this change (D-025), so the hold-out figures are no longer a fully unbiased estimate. This is stated wherever they are reported.
+- **Limitation:** the model says nothing about EQUI loans. If EQUI were a real applicant group at decision time, they would need their own treatment. The data cannot tell us (D-017).
 
 ---
 

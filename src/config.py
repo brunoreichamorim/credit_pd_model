@@ -157,6 +157,9 @@ EDA_MIN_LEVEL_SHARE = 0.01  # HEURISTIC, display only: levels below 1% of rows a
 LOANS_TABLE = "loans_clean"          # the processed Parquet, loaded as a table
 SPLIT_TABLE = "sample_split"         # ID -> sample, the D-013 split made once
 MODEL_DATASET_VIEW = "model_dataset"  # ID, sample, Status + the D-017 candidate features
+# D-026: the main model's population -- model_dataset without credit_type = EQUI
+# (EQUI_LEVEL below). Stage 5 fits on it and Stage 6 scores it.
+MODEL_SCOPE_VIEW = "model_scope_dataset"
 
 # Sample labels stored in SPLIT_TABLE (D-013).
 SAMPLE_DEVELOPMENT = "development"  # 70%: model fitting and 5-fold CV
@@ -262,6 +265,25 @@ LEAKAGE_ABLATION_MISSINGNESS_FEATURES = [
 MODEL_SCREENING_PATH = ARTIFACTS_DIR / "model_screening.csv"
 MODEL_CV_METRICS_PATH = ARTIFACTS_DIR / "model_cv_metrics.csv"
 MODEL_COEFFICIENTS_PATH = ARTIFACTS_DIR / "model_coefficients.csv"
+
+# ---------------------------------------------------------------------------
+# Stage 6 validation and calibration  (src/validation.py; decision log D-025)
+# ---------------------------------------------------------------------------
+# HEURISTIC pass/fail thresholds, fixed BEFORE the hold-out was scored. Judgement
+# calls for this project, not regulatory standards.
+# Each is (green limit, amber limit): within green -> green, within amber -> amber, else red.
+CRITERION_AUC_DROP = (0.02, 0.05)          # CV mean AUC minus hold-out AUC
+CRITERION_BINOMIAL_P = (0.05, 0.01)        # p-value: >= 0.05 green, >= 0.01 amber, else red
+CRITERION_SLOPE_GREEN = (0.90, 1.10)       # calibration slope range
+CRITERION_SLOPE_AMBER = (0.80, 1.20)
+CRITERION_DECILE_GAP = (0.02, 0.05)        # largest |observed - mean PD| in a PD decile
+BOOTSTRAP_N_RESAMPLES = 1_000
+BOOTSTRAP_CI_LEVEL = 0.95
+CALIBRATION_N_BINS = 10                    # PD deciles (also the Hosmer-Lemeshow groups)
+PD_SCORES_TABLE = "pd_scores"              # ID, sample, pd: scores from the frozen model
+VALIDATION_SEGMENT_COLUMNS = ["loan_type", "loan_purpose"]
+VALIDATION_FEATURE_DECILE_COLUMNS = ["loan_amount", INCOME_CLEAN_COL]
+VALIDATION_ARTIFACT_PREFIX = "validation_"  # artifacts/validation_*.csv
 
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150

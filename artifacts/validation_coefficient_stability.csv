@@ -1,0 +1,11 @@
+feature,holdout_coefficient,holdout_std_error,holdout_p_value,dev_coefficient,dev_std_error,same_sign,ci_overlap
+income_clean,-0.350069,0.019474,0.0,-0.415342,0.012698,True,False
+income_clean_missing,-0.333044,0.070749,3e-06,-0.21534,0.046016,True,True
+loan_amount,0.099655,0.019194,0.0,0.116436,0.01245,True,True
+lump_sum_payment_lpsm,2.709997,0.086446,0.0,2.486686,0.055664,True,True
+Neg_ammortization_neg_amm,1.139967,0.039762,0.0,1.172142,0.025502,True,True
+loan_type_type2,0.729154,0.039571,0.0,0.603983,0.026084,True,True
+loan_type_type3,0.172511,0.055177,0.001769,0.024839,0.036585,True,True
+loan_purpose_p1,-0.201774,0.038651,0.0,-0.166897,0.025055,True,True
+loan_purpose_p2,0.657297,0.08614,0.0,0.382,0.057598,True,True
+loan_purpose_p4,0.027347,0.036333,0.451645,-0.003182,0.023787,False,True

@@ -1,11 +1,11 @@
 """Stage 5 baseline logistic regression PD model (decision log D-012, D-022 to D-024).
 
-Fitted on the DuckDB development sample only (`model_dataset` view, `sample_split`
-from Stage 4). The hold-out sample is never read here; it is reserved for Stage 6's
+Fitted on the DuckDB development sample only, within the model's scope
+(`model_scope_dataset` view: no credit_type = EQUI, D-026; `sample_split` from Stage 4). The hold-out sample is never read here; it is reserved for Stage 6's
 single final evaluation (D-013).
 
-    load_development_data     model_dataset rows where sample = 'development', ordered by ID
-    load_screening_data       the same rows plus credit_type, for the EQUI comparisons
+    load_development_data     in-scope development rows (D-026), ordered by ID
+    load_screening_data       ALL development rows plus credit_type, for the EQUI comparisons
     check_rare_levels         fails loudly if a categorical level is below the
                               D-023 rare-level threshold (a safeguard, not a rule
                               expected to trigger -- see docs/decision_log.md)
@@ -51,9 +51,10 @@ MISSING_LEVEL = "<missing>"  # same label as the EDA / screening tables use
 
 
 def load_development_data(
-    con: duckdb.DuckDBPyConnection, view: str = config.MODEL_DATASET_VIEW
+    con: duckdb.DuckDBPyConnection, view: str = config.MODEL_SCOPE_VIEW
 ) -> pd.DataFrame:
     """Read the development-sample rows of `view`. Never reads the hold-out sample.
+    The default view is the main model's scope, which leaves out credit_type = EQUI (D-026).
 
     Rows are ordered by ID: the CV folds are assigned by row position, so without a
     fixed order the folds (and every CV metric) would change between runs.
@@ -65,8 +66,9 @@ def load_development_data(
 
 
 def load_screening_data(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Development rows of model_dataset plus credit_type, ordered by ID. credit_type is
-    used only to compare results in and outside EQUI (D-017), never as a feature.
+    """All development rows of model_dataset (EQUI included) plus credit_type, ordered
+    by ID. credit_type is used only to compare results in and outside EQUI (D-017),
+    never as a feature.
     """
     return con.execute(
         f"SELECT m.*, l.credit_type FROM {config.MODEL_DATASET_VIEW} AS m "
@@ -354,7 +356,9 @@ def _leakage_ablation_pipeline() -> Pipeline:
 def run_leakage_demo(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     """CV metrics (development sample only) for the full leakage-demonstration model
     and the indicators-only ablation (D-024). Compare against the main model's own
-    CV metrics, computed by `run_stage5`. Never touches the hold-out sample; never
+    CV metrics, computed by `run_stage5`. The demo uses ALL development rows (EQUI
+    included), because EQUI is part of the leakage it demonstrates; the main model's CV
+    covers its in-scope rows only (D-026). Never touches the hold-out sample; never
     used for risk grades or the dashboard.
     """
     dev = load_development_data(con, view=config.LEAKAGE_DEMO_VIEW)
