@@ -285,6 +285,21 @@ VALIDATION_SEGMENT_COLUMNS = ["loan_type", "loan_purpose"]
 VALIDATION_FEATURE_DECILE_COLUMNS = ["loan_amount", INCOME_CLEAN_COL]
 VALIDATION_ARTIFACT_PREFIX = "validation_"  # artifacts/validation_*.csv
 
+# ---------------------------------------------------------------------------
+# Stage 7 illustrative risk grades  (src/grades.py; decision log D-014, D-027)
+# ---------------------------------------------------------------------------
+# HEURISTIC grade-construction thresholds, fixed BEFORE the final grade run (D-027).
+# Built from development loans only; the hold-out is never used (D-025).
+GRADE_START_BINS = 20      # equal-count PD bins the merging starts from
+GRADE_MERGE_ALPHA = 0.05   # each grade must default significantly more than the one below (one-sided)
+GRADE_MIN_SHARE = 0.05     # each grade holds at least this share of development loans
+GRADE_MAX_GRADES = 10      # upper limit on the number of grades (D-014)
+GRADE_EDGE_DECIMALS = 6    # boundaries are rounded once, so the published scale is the one applied
+GRADE_LABELS = "ABCDEFGHIJ"  # A = lowest PD
+GRADE_SCALE_TABLE = "grade_scale"  # grade, grade_rank, pd_lower, pd_upper, grade_pd
+PD_GRADES_VIEW = "pd_grades"       # pd_scores + grade (sql/grade_assignment.sql)
+GRADES_ARTIFACT_PREFIX = "grades_"  # artifacts/grades_*.csv
+
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150
 COLOR_PRIMARY = "#2a78d6"    # single series / first series

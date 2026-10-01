@@ -175,7 +175,42 @@ The model was therefore refitted outside EQUI and the hold-out evaluated again (
 ![Calibration by loan_amount and income_clean decile](reports/figures/11_calibration_by_feature.png)
 
 ## 9. Illustrative risk grades
-*Stage 7.*
+**Stage 7** (`src/grades.py`, SQL in `sql/grade*.sql`, notebook [`04_risk_grades.ipynb`](notebooks/04_risk_grades.ipynb)):
+
+```bash
+python -m src.grades    # needs pd_scores from Stage 6 (python -m src.holdout)
+```
+
+These are *illustrative internal risk grades for this project* (D-014), not an official or regulatory grading scale. The scale is built and checked on development loans only. No hold-out outcome is used (D-025), and EQUI loans get no grade (D-026).
+
+**Why not ten equal-count grades.** The observed default rate is flat at about 9-10% across the lowest ~45% of loans, and the lowest-PD decile defaults *more* often than the next two. Ten equal-count grades would not rise from grade to grade.
+
+**Construction (decision [D-027](docs/decision_log.md)).** Start from 20 equal-count PD bins. Merge adjacent bins until three conditions hold:
+- every grade defaults significantly more than the one below (one-sided test, p < 0.05);
+- every grade holds at least 5% of loans;
+- there are at most 10 grades.
+
+These thresholds are heuristics, set before the final run. Each grade's PD is the mean model PD of its loans. DuckDB stores the scale as the table `grade_scale`, and the view `pd_grades` assigns grades with a range join.
+
+**Result: 8 grades** (development, in scope; `artifacts/grades_scale.csv`):
+
+| Grade | PD range | Share of loans | Grade PD | Observed default rate |
+|---|---|---:|---:|---:|
+| A | < 12.16% | 45.0% | 9.5% | 9.6% |
+| B | 12.16-13.52% | 10.0% | 12.8% | 10.9% |
+| C | 13.52-15.32% | 10.0% | 14.4% | 14.1% |
+| D | 15.32-17.69% | 10.0% | 16.4% | 15.8% |
+| E | 17.69-19.54% | 5.0% | 18.5% | 17.6% |
+| F | 19.54-22.86% | 5.0% | 21.1% | 23.3% |
+| G | 22.86-36.52% | 10.0% | 28.3% | 29.1% |
+| H | ≥ 36.52% | 5.0% | 51.6% | 53.6% |
+
+- Default rates rise from grade to grade in-sample, on out-of-fold PDs (each loan scored by the Stage 5 fold model that did not see it), and in each of the 5 folds.
+- **Grade A holds 45% of loans.** The model cannot rank risk below a PD of about 12%, so one grade covers that range.
+- **The number of grades is not robust.** With the same rules, rounding the boundaries differently or starting from 19 bins gives 7 or 10 grades. The pre-set settings were kept.
+- In-sample, grade PD and observed rate differ by at most 2.3 pp. This describes the development data; it is not a validation result.
+
+![Grade PD, observed default rate and loans per grade](reports/figures/12_risk_grades.png)
 
 ## 10. Dashboard
 *Stage 9. Screenshots will be added.*
@@ -192,6 +227,7 @@ The model was therefore refitted outside EQUI and the hold-out evaluated again (
 - The model covers only loans outside `credit_type = EQUI` (D-026). It says nothing about EQUI loans, which all defaulted.
 - The hold-out was evaluated twice, before and after the D-026 refit, so the hold-out results are not a fully unbiased estimate (D-025).
 - The model under-predicts in the top `loan_amount` and `income_clean` deciles by about 3.5 pp, and for `loan_purpose = p2` by 4.3 pp (D-023, D-025).
+- The model does not separate risk among the lowest-PD half of loans, so the best illustrative grade holds 45% of loans. The number of grades (8) depends on technical settings of the grading rule (D-027).
 
 ## 13. Technologies
 Python 3.11 · pandas · DuckDB (SQL) · scikit-learn · statsmodels · matplotlib · Plotly · Streamlit · pytest
@@ -221,7 +257,7 @@ credit_pd_model/
 ├── data/processed/      # cleaned Parquet + DuckDB database (generated, gitignored)
 ├── sql/                 # data quality, portfolio analysis, risk segmentation, model dataset
 ├── src/                 # config, data processing, db, model, validation, scoring, monitoring
-├── notebooks/           # 01 EDA · 02 model training · 03 validation · 04 monitoring
+├── notebooks/           # 01 EDA · 02 model training · 03 validation · 04 risk grades · 05 monitoring
 ├── tests/               # pytest checks
 ├── artifacts/           # data-quality tables (dq_*.csv), metrics, result tables (model binary gitignored)
 ├── reports/figures/     # figures used in this README
@@ -239,7 +275,7 @@ credit_pd_model/
 | 4 | SQL / DuckDB layer | ✅ |
 | 5 | Baseline logistic regression PD model | ✅ |
 | 6 | Validation & calibration | ✅ |
-| 7 | Illustrative risk grades | ⏳ |
+| 7 | Illustrative risk grades | ✅ |
 | 8 | Monitoring (PSI / stability) | ⏳ |
 | 9 | Streamlit dashboard | ⏳ |
 | 10 | Final documentation | ⏳ |

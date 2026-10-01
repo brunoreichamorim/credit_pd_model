@@ -154,9 +154,10 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 
 ### D-014 Risk grades are illustrative internal grades for this project
 - **Type:** MODELLING CHOICE
-- **Status:** Open; boundaries decided in Stage 7
-- **Decision:** Predicted PD is mapped to 10 grades (A to J). They are described as **illustrative internal risk grades for this project**. They are not an official banking methodology, not a regulatory master scale, and not an underwriting decision.
+- **Status:** Agreed (Stage 7; construction in D-027)
+- **Decision:** Predicted PD is mapped to illustrative grades, labelled from A (lowest PD). They are described as **illustrative internal risk grades for this project**. They are not an official banking methodology, not a regulatory master scale, and not an underwriting decision.
 - **Checks planned:** default rates rise from grade to grade, each grade has enough observations, and the construction of the boundaries is documented transparently.
+- **Amended in Stage 7:** the original plan was 10 grades (A to J). Ten equal-count grades fail the first check on this model (D-027), so the number of grades is set by the D-027 merging rule, with 10 as the upper limit. Result: **8 grades (A to H)**.
 
 ### D-015 The definition of `Status` (default) is undocumented
 - **Type:** ASSUMPTION
@@ -301,6 +302,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
       - top `income_clean` decile under-predicted by 3.5 pp (PD 8.5%, observed 12.1%).
       Both are inside the 5 pp amber limit.
     - **Decision (MODELLING CHOICE, Agreed; Bruno, 2026-10-01):** this does **not** count as the second trigger firing. The top-decile misfit is accepted as a documented limitation, and `loan_amount` and `income_clean` stay as single log-linear terms. Figures: `reports/figures/11_calibration_by_feature.png`, `notebooks/03_validation.ipynb`.
+  - **Where the misfit lands in the Stage 7 grades (FACT, development; D-027):** the lowest PDs (high incomes, large loans) fall in grade A, which pools the flat lower half of the PD range. Grade A's PD (9.5%) matches its observed rate (9.6%), so the misfit is absorbed at grade level. Within grade A, the model's ranking is not borne out by defaults. The model is unchanged.
 
 ### D-024 Leakage-demonstration model (option C)
 - **Type:** MODELLING CHOICE
@@ -374,6 +376,59 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Stage 5 result in scope (FACT; `artifacts/model_cv_metrics.csv`, `model_coefficients.csv`):** 93,391 development loans, 16.03% default rate. Mean CV AUC 0.675, Gini 0.349, KS 0.273, Brier 0.123.
 - **Cost:** the hold-out was evaluated a second time after this change (D-025), so the hold-out figures are no longer a fully unbiased estimate. This is stated wherever they are reported.
 - **Limitation:** the model says nothing about EQUI loans. If EQUI were a real applicant group at decision time, they would need their own treatment. The data cannot tell us (D-017).
+
+### D-027 Stage 7 grade construction and pre-set checks
+- **Type:** MODELLING CHOICE; the thresholds are HEURISTIC (judgement calls for this project, not regulatory standards)
+- **Status:** Agreed (Bruno, 2026-10-01, before the final Stage 7 run). Written **before** the grade scale was built by `src/grades.py`.
+- **Issue (FACT; development sample, in-scope, in-sample PDs from the frozen Stage 5 model):**
+  - Ten equal-count grades, as D-014 first planned, fail D-014's own check. The observed default rate is flat across the lowest ~45% of loans (PD 0.9% to 12%), at about 9-10%, and grade 1 (9.7%) defaults more often than grades 2 and 3 (9.3%). The Stage 6 hold-out deciles showed the same pattern.
+  - The lowest PDs are where the D-023 misfit sits: loans with PD below 5% (high income, large loans) default at about 12%, against a mean PD of about 4%.
+- **Options considered:**
+  - (a) ten equal-count grades: not monotone here;
+  - (b) a fixed geometric PD scale (a "master scale"): puts about 65% of loans in two grades, leaves the extreme grades at about 1% of loans, and gives the best grade a badly wrong PD;
+  - (c) equal-count bins merged until every step between grades is significant.
+- **Decision:** (c).
+  - **S1. Data:** the scale is built from in-sample development PDs of the frozen model, the model that is actually used. Out-of-fold PDs from the Stage 5 CV folds are a robustness check. **The hold-out is not used**: no boundary, grade PD or check uses a hold-out outcome (D-025).
+  - **S2/S3. Boundaries:** start from `GRADE_START_BINS = 20` equal-count PD bins. Then repeatedly merge two adjacent bands until three conditions hold:
+    - every grade's default rate is higher than the grade below, with one-sided two-proportion z-test p < `GRADE_MERGE_ALPHA = 0.05`;
+    - every grade holds at least `GRADE_MIN_SHARE = 5%` of development loans;
+    - there are at most `GRADE_MAX_GRADES = 10` grades.
+    The pair merged first is the least significant step. Boundaries are rounded to 6 decimals before use, so the published scale is exactly the one applied. Every merge is logged.
+  - **S4. Concentration:** no limit on a grade's share. A large best grade is the honest result if the model cannot rank the low-PD loans; its share is reported.
+  - **S5. Grade PD:** the mean model PD of the grade's development loans. The observed rate and the gap are shown next to it, so the D-023 misfit stays visible rather than recalibrated away.
+  - **S7. Labels:** letters from A (lowest PD) upwards. EQUI loans (out of scope, D-026) get no grade.
+- **Pre-set checks (development only):**
+
+  | Check | Rule |
+  |---|---|
+  | Default rate rises from grade to grade, in-sample | must pass (true by construction) |
+  | Default rate rises from grade to grade, pooled out-of-fold PDs | must pass |
+  | The same, in each of the 5 folds | reported only |
+  | Every grade ≥ `GRADE_MIN_SHARE` of loans | must pass |
+  | Every step one-sided p < `GRADE_MERGE_ALPHA` | must pass |
+  | Number of grades ≤ `GRADE_MAX_GRADES` | must pass |
+  | Grade PD vs observed rate (binomial test per grade) | reported only: in-sample it would be circular |
+
+- **Implementation:** `src/grades.py` (`python -m src.grades`), `sql/grade_assignment.sql` (view `pd_grades`: a range join of `pd_scores` to the table `grade_scale`), `sql/grades_summary.sql`, `sql/grades_scope.sql`, tables in `artifacts/grades_*.csv`, notebook `notebooks/04_risk_grades.ipynb`, figure `reports/figures/12_risk_grades.png`.
+- **Correction after the first run (Bruno, 2026-10-01):** the minimum size is applied as a loan count, floor(`GRADE_MIN_SHARE` × loans) = 4,669, not as a share. Twenty equal-count bins of 93,391 loans hold 4,669 or 4,670 loans each, and 4,669 is 4.9994%, so a share comparison would treat full-size bins as too small. The 5% threshold itself is unchanged. This did not change the result: see the sensitivity below.
+- **Result (FACT; development, in-scope; `artifacts/grades_*.csv`):** **8 grades, A to H.**
+
+  | Grade | PD range | Share | Grade PD | Observed | Out-of-fold observed |
+  |---|---|---:|---:|---:|---:|
+  | A | < 12.16% | 45.0% | 9.5% | 9.6% | 9.6% |
+  | B | 12.16-13.52% | 10.0% | 12.8% | 10.9% | 11.2% |
+  | C | 13.52-15.32% | 10.0% | 14.4% | 14.1% | 13.7% |
+  | D | 15.32-17.69% | 10.0% | 16.4% | 15.8% | 15.9% |
+  | E | 17.69-19.54% | 5.0% | 18.5% | 17.6% | 17.5% |
+  | F | 19.54-22.86% | 5.0% | 21.1% | 23.3% | 23.2% |
+  | G | 22.86-36.52% | 10.0% | 28.3% | 29.1% | 29.2% |
+  | H | ≥ 36.52% | 5.0% | 51.6% | 53.6% | 53.5% |
+
+  - **Every pre-set check passes.** Default rates rise in-sample, on the pooled out-of-fold PDs and in each of the 5 folds. The smallest grade has 4,670 loans, and the largest step p-value is 0.0035 (D to E).
+  - **Merges:** 12. The first 11 remove non-significant steps below a PD of 16.4%, which folds the flat lower half into grade A. The 12th merges two bands that differ clearly (26.6% vs 31.6%, p < 0.001), only because the upper band held 4,668 loans, one short of the minimum. Rounding the boundaries to 6 decimals and tied PDs move a few loans across the bin edges. This is why grade G spans a wide PD range.
+  - **Grade PD vs observed, in-sample (reported only):** every gap is within 2.3 pp. B is over-predicted by 1.9 pp, and F and H are under-predicted by 2.3 and 1.9 pp (binomial p < 0.01 for B, F and H).
+  - **Scope:** 93,391 development and 39,981 hold-out loans are graded. 10,678 and 4,620 EQUI loans are not. No hold-out outcome is used; `tests/test_grades.py` flips every hold-out `Status` and checks that no Stage 7 table changes.
+- **Sensitivity (FACT; `notebooks/04_risk_grades.ipynb`, section 2):** with the same rules, the number of grades depends on technical settings: 8 with the adopted settings (20 bins, 6 decimals), 7 with boundaries to 9 decimals, and 10 with 19 starting bins. The shape is the same every time: one large grade over the flat lower half, then steadily rising grades up to a small grade above 50%. **Decision (Bruno, 2026-10-01):** keep the pre-set settings and the 8-grade result. No parameter is re-chosen after seeing the outcome. The exact number of grades is documented as not robust.
 
 ---
 

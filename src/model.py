@@ -12,6 +12,7 @@ single final evaluation (D-013).
     build_preprocessor        the main model's ColumnTransformer (D-023)
     build_pipeline            preprocessor + LogisticRegression
     cross_validate_model      5-fold stratified CV: metrics and coefficients per fold
+    out_of_fold_predictions   PD per row from the fold model that did not see it (Stage 7 check)
     fit_final_model           fit on the whole development sample; save to disk
     coefficient_table         sklearn + statsmodels coefficients, with expected signs
     run_leakage_demo          option C: full model + indicators-only ablation (D-024)
@@ -178,6 +179,12 @@ def build_pipeline() -> Pipeline:
 # ---------------------------------------------------------------------------
 
 
+def _cv_folds() -> StratifiedKFold:
+    """The D-013 folds. Shared by every CV function, so Stage 5's CV metrics and
+    Stage 7's out-of-fold check always use the same folds."""
+    return StratifiedKFold(n_splits=config.CV_FOLDS, shuffle=True, random_state=config.RANDOM_SEED)
+
+
 def cross_validate_model(
     pipeline: Pipeline, X: pd.DataFrame, y: pd.Series
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -186,7 +193,7 @@ def cross_validate_model(
     a fresh, unfitted copy of `pipeline` on its training rows only, so imputation,
     scaling and encoding never see the fold's validation rows.
     """
-    folds = StratifiedKFold(n_splits=config.CV_FOLDS, shuffle=True, random_state=config.RANDOM_SEED)
+    folds = _cv_folds()
     metric_rows, coef_rows = [], []
 
     for fold, (train_idx, val_idx) in enumerate(folds.split(X, y), start=1):
@@ -202,6 +209,22 @@ def cross_validate_model(
     mean_row = {"fold": "mean", **metrics_df.drop(columns="fold").mean().to_dict()}
     metrics_df = pd.concat([metrics_df, pd.DataFrame([mean_row])], ignore_index=True)
     return metrics_df, pd.DataFrame(coef_rows)
+
+
+def out_of_fold_predictions(
+    pipeline: Pipeline, X: pd.DataFrame, y: pd.Series
+) -> tuple[np.ndarray, np.ndarray]:
+    """PD for every row from the fold model that did NOT see it, on the same folds as
+    `cross_validate_model`. Returns (pd, fold number 1..CV_FOLDS), in the row order of X.
+    """
+    pd_oof = np.zeros(len(y))
+    fold_of_row = np.zeros(len(y), dtype=int)
+    for fold, (train_idx, val_idx) in enumerate(_cv_folds().split(X, y), start=1):
+        fold_pipeline = clone(pipeline)
+        fold_pipeline.fit(X.iloc[train_idx], y.iloc[train_idx])
+        pd_oof[val_idx] = fold_pipeline.predict_proba(X.iloc[val_idx])[:, 1]
+        fold_of_row[val_idx] = fold
+    return pd_oof, fold_of_row
 
 
 def fit_final_model(X: pd.DataFrame, y: pd.Series, path: Path = config.MODEL_PATH) -> Pipeline:
