@@ -1,11 +1,13 @@
 """Stage 9: Streamlit dashboard for the credit risk PD project (decision log D-029).
 
 A read-only view of the results that Stages 2-8 wrote to artifacts/. Nothing is
-refitted and no metric is recomputed here. The optional "Score a loan" page uses
-the frozen in-scope model if artifacts/pd_model.joblib exists (it is gitignored).
+refitted and no metric is recomputed here. The optional "Score a loan" page is off
+by default (D-030); when switched on, it uses the frozen in-scope model if
+artifacts/pd_model.joblib exists (it is gitignored).
 
-Run from the project root:
+Run from the project root (PowerShell; the first line switches scoring on):
 
+    $env:PD_DASHBOARD_SCORING = "on"
     .venv\\Scripts\\python.exe -m streamlit run app.py
 """
 
@@ -15,6 +17,7 @@ import streamlit as st
 
 from src import config
 from src import dashboard
+from src import dashboard_text
 from src import grades
 from src import holdout
 
@@ -314,6 +317,10 @@ def page_monitoring() -> None:
 
 def page_score() -> None:
     st.title("Score a loan")
+    if not dashboard.scoring_switched_on():  # off by default, so a public copy never scores (D-030)
+        st.info(dashboard_text.SCORING_OFF, icon=":material/block:")
+        st.caption(dashboard_text.SCORING_SWITCH_HINT)
+        return
     st.warning(
         "Illustrative only: this shows what the frozen model returns for one set of inputs. It is "
         "not a credit decision (D-029)."

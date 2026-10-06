@@ -11,6 +11,7 @@ import pytest
 
 from src import config
 from src import dashboard
+from src import dashboard_text
 from src import grades
 from src import holdout
 from src import model
@@ -248,6 +249,14 @@ def test_build_loan_frame_refuses_a_level_the_model_has_not_seen():
         dashboard.build_loan_frame(200_000, 6_000, levels, "CIB", KNOWN_LEVELS)
 
 
+def test_scoring_is_off_unless_the_switch_is_explicitly_on():
+    # D-030: off by default; only the exact value config.SCORING_ENV_ON switches it on
+    assert not dashboard.scoring_switched_on({})
+    for value in ("", "off", "ON", "1", "true", "yes"):
+        assert not dashboard.scoring_switched_on({config.SCORING_ENV_VAR: value}), value
+    assert dashboard.scoring_switched_on({config.SCORING_ENV_VAR: config.SCORING_ENV_ON})
+
+
 def test_load_model_if_available_returns_none_without_a_model(tmp_path):
     assert dashboard.load_model_if_available(tmp_path / "no_model.joblib") is None
 
@@ -275,6 +284,31 @@ needs_model = pytest.mark.skipif(
 )
 DASHBOARD_PAGES = ["Overview", "Leakage finding", "Model", "Validation", "Risk grades",
                    "Monitoring", "Score a loan"]
+SCORE_PAGE = "Score a loan"
+
+
+@pytest.fixture
+def scoring(monkeypatch):
+    """Set the D-030 scoring switch for one AppTest run: scoring(True) or scoring(False).
+    The cached model is cleared before and after, so a patched loader never leaks."""
+    import streamlit as st
+
+    def switch(on: bool) -> None:
+        if on:
+            monkeypatch.setenv(config.SCORING_ENV_VAR, config.SCORING_ENV_ON)
+        else:
+            monkeypatch.delenv(config.SCORING_ENV_VAR, raising=False)
+
+    st.cache_resource.clear()
+    yield switch
+    st.cache_resource.clear()
+
+
+def open_score_page():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_file(str(config.PROJECT_ROOT / "app.py"), default_timeout=60).run()
+    return app.sidebar.radio[0].set_value(SCORE_PAGE).run()
 
 
 @needs_artifacts
@@ -304,9 +338,11 @@ def test_real_grade_scale_dashboard_agrees_with_stage7_at_every_boundary():
 
 
 @needs_artifacts
-def test_every_dashboard_page_renders_without_an_error():
+@pytest.mark.parametrize("switch_on", [False, True])
+def test_every_dashboard_page_renders_without_an_error(scoring, switch_on):
     from streamlit.testing.v1 import AppTest
 
+    scoring(switch_on)
     app = AppTest.from_file(str(config.PROJECT_ROOT / "app.py"), default_timeout=60).run()
     assert app.sidebar.radio[0].options == DASHBOARD_PAGES
     for page in DASHBOARD_PAGES:
@@ -362,12 +398,42 @@ def test_monitoring_page_explains_the_backtest_lights():
 
 
 @needs_artifacts
-@needs_model
-def test_score_page_scores_an_in_scope_loan_and_refuses_equi():
-    from streamlit.testing.v1 import AppTest
+def test_score_page_is_off_without_the_switch_even_if_the_model_is_present(scoring):
+    # D-030: with the switch off there is no form, whether or not pd_model.joblib exists
+    scoring(False)
+    app = open_score_page()
+    assert not app.exception
+    assert not app.selectbox and not app.number_input and not app.button and not app.metric
+    assert "Scoring is switched off" in app.info[0].value
+    assert dashboard_text.SCORING_SWITCH_HINT in [c.value for c in app.caption]
 
-    app = AppTest.from_file(str(config.PROJECT_ROOT / "app.py"), default_timeout=60).run()
-    app.sidebar.radio[0].set_value("Score a loan").run()
+
+@needs_artifacts
+def test_score_page_is_off_when_switched_on_but_the_model_is_absent(scoring, monkeypatch):
+    scoring(True)
+    monkeypatch.setattr(dashboard, "load_model_if_available", lambda *args, **kwargs: None)
+    app = open_score_page()
+    assert not app.exception
+    assert not app.selectbox and not app.button and not app.metric
+    assert any("is not available" in i.value for i in app.info)
+
+
+@needs_artifacts
+def test_score_page_refuses_a_model_that_does_not_match_the_committed_one(scoring, monkeypatch, toy_pipeline):
+    # a model with the right features but other coefficients (here the synthetic one) is refused
+    scoring(True)
+    monkeypatch.setattr(dashboard, "load_model_if_available", lambda *args, **kwargs: toy_pipeline)
+    app = open_score_page()
+    assert not app.exception
+    assert not app.selectbox and not app.button and not app.metric
+    assert "does not match the committed in-scope model" in app.error[0].value
+
+
+@needs_artifacts
+@needs_model
+def test_score_page_scores_an_in_scope_loan_and_refuses_equi(scoring):
+    scoring(True)  # D-030: the form exists only with the switch on
+    app = open_score_page()
     credit_type = app.selectbox[0]
     in_scope = next(level for level in credit_type.options if level != config.EQUI_LEVEL)
 
@@ -395,14 +461,12 @@ def test_score_page_scores_an_in_scope_loan_and_refuses_equi():
 
 @needs_artifacts
 @needs_model
-def test_score_page_warns_on_an_out_of_range_input_but_still_shows_the_pd():
+def test_score_page_warns_on_an_out_of_range_input_but_still_shows_the_pd(scoring):
     # D-029: an input above the 99th percentile of in-scope development loans is scored,
     # with an amber extrapolation warning next to the PD
-    from streamlit.testing.v1 import AppTest
-
+    scoring(True)  # D-030: the form exists only with the switch on
     ranges = dashboard.load_artifact("sql_model_input_ranges.csv").set_index("variable")
-    app = AppTest.from_file(str(config.PROJECT_ROOT / "app.py"), default_timeout=60).run()
-    app.sidebar.radio[0].set_value("Score a loan").run()
+    app = open_score_page()
     app.selectbox[0].set_value(next(v for v in app.selectbox[0].options if v != config.EQUI_LEVEL))
     app.number_input[0].set_value(float(ranges.loc["loan_amount", "upper"]) * 2)
     app.button[0].click().run()

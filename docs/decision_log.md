@@ -560,6 +560,29 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - **Scale check:** the dashboard checks `grades_scale.csv` whenever it loads it: the scale must run from 0 to 1 with no gaps or overlaps, rising boundaries and unique labels.
   - **Tests:** the original 1.5 case is restored, next to -0.1 and NaN. A reconciliation test confirms the dashboard and Stage 7 give the same grade at every published boundary and just below it. Rebuilding Stages 2 to 8 left every committed table unchanged.
 - **Tests (`tests/test_dashboard.py`):** the loader and scoring guards on synthetic data; every committed table has the columns the dashboard uses; every page renders without an error (Streamlit `AppTest`); and, if the model is present, an in-scope loan is scored into a published grade while an EQUI loan is refused.
+- **Later change:** the scoring page is off by default and runs only locally when switched on; see D-030.
+
+### D-030 Dashboard presentation and public-copy rules
+- **Type:** MODELLING CHOICE
+- **Status:** Agreed (Bruno, 2026-10-06, before the presentation polish)
+- **Issue:** with the D-029 rule alone, the scoring page runs wherever `artifacts/pd_model.joblib` exists. A public copy of the dashboard would score loans if the binary ever reached it. A public form that returns a PD and a grade for any loan can be read as a credit decision, which this learning project is not.
+- **Options considered:**
+  - (a) off by default, switched on locally with an environment variable;
+  - (b) a constant in `src/config.py`, so switching on means editing code;
+  - (c) keep relying on the model file being absent.
+- **Decision (a):** the scoring page runs only when **all three** hold:
+  1. the environment variable `config.SCORING_ENV_VAR` (`PD_DASHBOARD_SCORING`) equals `config.SCORING_ENV_ON` (`on`), checked by `dashboard.scoring_switched_on`;
+  2. the model file exists;
+  3. its coefficients match the committed `model_coefficients.csv` (D-029).
+  - Otherwise the page shows no form. It explains why scoring is off (`src/dashboard_text.py`) and how to switch it on locally (README §11).
+  - The D-029 scoring guards are unchanged.
+- **Why:** off by default means a public copy cannot score, even if the binary is committed or uploaded by mistake. Option (c) fails exactly in that case; option (b) mixes a deployment setting into the code.
+- **Tests (`tests/test_dashboard.py`):**
+  - the switch is off unless set to exactly `on`;
+  - with the switch off, the page has no form even when the model is present;
+  - with the switch on, a missing model or one whose coefficients differ from the committed table is refused;
+  - every page renders with the switch on and off;
+  - the scoring-form tests run with the switch on.
 
 ---
 

@@ -12,6 +12,7 @@ Nothing here imports Streamlit, so every function can be unit-tested.
     missing_artifacts        required CSVs that are absent
     criterion_rules          the D-025 thresholds as readable text, from config
     backtest_light_rules     caption for the Stage 8 grade-backtest lights, from config
+    scoring_switched_on      the D-030 switch: scoring is off unless it is explicitly turned on
     load_model_if_available  the frozen model, or None if it has not been built
     check_model_coefficients the loaded model is the committed in-scope model
     model_levels             the categorical levels the model was trained on
@@ -21,6 +22,8 @@ Nothing here imports Streamlit, so every function can be unit-tested.
     grade_for_pd             the D-027 grade of a PD, through grades.assign_grade
 """
 
+import os
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -106,6 +109,12 @@ def backtest_light_rules() -> str:
 # ---------------------------------------------------------------------------
 # Scoring one loan with the frozen model
 # ---------------------------------------------------------------------------
+
+
+def scoring_switched_on(environ: Mapping[str, str] = os.environ) -> bool:
+    """True only if the scoring switch is explicitly on (config.SCORING_ENV_VAR equals
+    config.SCORING_ENV_ON). Off by default, so a public copy never scores (D-030)."""
+    return environ.get(config.SCORING_ENV_VAR) == config.SCORING_ENV_ON
 
 
 def load_model_if_available(path: Path = config.MODEL_PATH) -> Pipeline | None:

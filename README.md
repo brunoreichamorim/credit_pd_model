@@ -257,7 +257,14 @@ The dashboard is **read-only**. It shows the tables and figures that Stages 2 to
 | Monitoring | PSI / CSI by variable with the heuristic 0.10 / 0.25 bands (D-028), bin shares, the watch list and the development backtest |
 | Score a loan | PD and illustrative grade for one set of inputs, from the frozen in-scope model |
 
-**Score a loan** needs `artifacts/pd_model.joblib`, which is gitignored. Build it locally with `python -m src.model` (this needs the raw data). Without the file, the page says so and every other page still works. EQUI loans are refused as out of scope (D-026), and only categorical levels the model was trained on can be chosen. If `loan_amount` or income is outside the 1st-99th percentile of in-scope development loans (a heuristic, D-029), the PD is shown with an amber extrapolation warning. The result is illustrative, not a credit decision.
+**Score a loan is off by default** (D-030), so a public copy of the dashboard never scores: the page explains why and shows no form. It works only locally, when all three hold: the environment variable `PD_DASHBOARD_SCORING` is `on`, `artifacts/pd_model.joblib` exists, and its coefficients match the committed `model_coefficients.csv`. The model file is gitignored; build it with `python -m src.model` (this needs the raw data). To switch scoring on:
+
+```bash
+PD_DASHBOARD_SCORING=on streamlit run app.py         # macOS / Linux
+$env:PD_DASHBOARD_SCORING = "on"; streamlit run app.py   # Windows PowerShell
+```
+
+Without the switch or the file, every other page still works. EQUI loans are refused as out of scope (D-026), and only categorical levels the model was trained on can be chosen. If `loan_amount` or income is outside the 1st-99th percentile of in-scope development loans (a heuristic, D-029), the PD is shown with an amber extrapolation warning. The result is illustrative, not a credit decision.
 
 *Screenshots will be added.*
 

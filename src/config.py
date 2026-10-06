@@ -399,6 +399,11 @@ MODEL_COEFFICIENT_RTOL = 1e-9
 # project, not a standard: about 1% of development loans lie beyond each end.
 INPUT_RANGE_QUANTILES = (0.01, 0.99)
 INPUT_RANGE_VARIABLES = ["loan_amount", INCOME_CLEAN_COL]
+# D-030: the scoring page is off by default. It runs only when this environment variable
+# equals SCORING_ENV_ON (set locally), the model file exists and its coefficients match
+# model_coefficients.csv. A public copy therefore never scores, even if the binary is present.
+SCORING_ENV_VAR = "PD_DASHBOARD_SCORING"
+SCORING_ENV_ON = "on"
 
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150
