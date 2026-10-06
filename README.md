@@ -239,7 +239,27 @@ python -m src.monitoring    # needs pd_grades from Stage 7 (python -m src.grades
 ![PSI by variable and grade shares, development vs hold-out](reports/figures/13_monitoring_psi.png)
 
 ## 11. Dashboard
-*Stage 9. Screenshots will be added.*
+**Stage 9** (`app.py`, helpers in `src/dashboard.py`, decision [D-029](docs/decision_log.md)):
+
+```bash
+streamlit run app.py    # reads the committed artifacts/*.csv; no data or model rebuild needed
+```
+
+The dashboard is **read-only**. It shows the tables and figures that Stages 2 to 8 already produced, and never refits a model or computes a new metric, apart from the single-loan PD on the Score page.
+
+| Page | Shows |
+|---|---|
+| Overview | scope and disclaimer, data-quality summary, development / hold-out split, model scope (EQUI excluded) |
+| Leakage finding | default rate when a field is missing vs present, the leakage-demonstration CV results (D-024), and every excluded field with its reason |
+| Model | the 6 features, coefficients with expected signs (including the `loan_amount` note, D-023) and feature screening |
+| Validation | hold-out AUC, Gini, KS and Brier with confidence intervals, the D-025 traffic lights, calibration by PD decile, segments |
+| Risk grades | the A–H scale, grade PD vs observed rate, the pre-set checks and the D-027 sensitivity note |
+| Monitoring | PSI / CSI by variable with the heuristic 0.10 / 0.25 bands (D-028), bin shares, the watch list and the development backtest |
+| Score a loan | PD and illustrative grade for one set of inputs, from the frozen in-scope model |
+
+**Score a loan** needs `artifacts/pd_model.joblib`, which is gitignored. Build it locally with `python -m src.model` (this needs the raw data). Without the file, the page says so and every other page still works. EQUI loans are refused as out of scope (D-026), and only categorical levels the model was trained on can be chosen. If `loan_amount` or income is outside the 1st-99th percentile of in-scope development loans (a heuristic, D-029), the PD is shown with an amber extrapolation warning. The result is illustrative, not a credit decision.
+
+*Screenshots will be added.*
 
 ## 12. Results
 *To be filled with actual results. No numbers are reported before they have been produced.*
@@ -274,6 +294,7 @@ pip install -r requirements.txt
 python -m src.data_processing    # needs data/raw/Loan_Default.csv
 python -m src.db                 # builds the DuckDB database and sql_*.csv tables
 pytest                           # tests on the raw file are skipped if it is absent
+streamlit run app.py             # dashboard over the committed result tables
 ```
 
 ## Project structure
@@ -304,5 +325,5 @@ credit_pd_model/
 | 6 | Validation & calibration | ✅ |
 | 7 | Illustrative risk grades | ✅ |
 | 8 | Monitoring (PSI / stability) | ✅ |
-| 9 | Streamlit dashboard | ⏳ |
+| 9 | Streamlit dashboard | ✅ |
 | 10 | Final documentation | ⏳ |

@@ -198,6 +198,22 @@ def test_split_summary_reconciles_with_split(toy_con):
     assert summary["n_defaults"].sum() == len(TOY_DEFAULT_IDS)
 
 
+def test_model_input_ranges_use_in_scope_development_loans_only(toy_con):
+    # D-029: the quantiles come from the loans the model is fitted on (in scope, development)
+    ranges = db.run_query(toy_con, "model_input_ranges", q_lower=config.INPUT_RANGE_QUANTILES[0],
+                          q_upper=config.INPUT_RANGE_QUANTILES[1]).set_index("variable")
+    assert sorted(ranges.index) == sorted(config.INPUT_RANGE_VARIABLES)
+    dev = toy_con.execute(
+        f"SELECT * FROM {config.MODEL_SCOPE_VIEW} WHERE sample = '{config.SAMPLE_DEVELOPMENT}'"
+    ).df()
+    for variable in config.INPUT_RANGE_VARIABLES:
+        values = dev[variable].dropna()
+        assert ranges.loc[variable, "n_loans"] == len(values)
+        assert ranges.loc[variable, "lower"] == pytest.approx(values.quantile(config.INPUT_RANGE_QUANTILES[0]))
+        assert ranges.loc[variable, "median"] == pytest.approx(values.median())
+        assert ranges.loc[variable, "upper"] == pytest.approx(values.quantile(config.INPUT_RANGE_QUANTILES[1]))
+
+
 def test_build_database_writes_aggregate_tables(toy_processed, tmp_path):
     parquet = tmp_path / "loans_clean.parquet"
     dp.save_processed_data(toy_processed, parquet)

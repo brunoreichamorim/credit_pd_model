@@ -333,6 +333,73 @@ MONITORING_BASELINE_TABLE = "monitoring_baseline"   # frozen development bins an
 MONITORING_BIN_COUNTS_VIEW = "monitoring_bin_counts"  # loans per bin and sample (sql/)
 MONITORING_ARTIFACT_PREFIX = "monitoring_"  # artifacts/monitoring_*.csv
 
+# ---------------------------------------------------------------------------
+# Stage 9 dashboard  (app.py, src/dashboard.py; decision log D-029)
+# ---------------------------------------------------------------------------
+# A read-only view of the committed tables: nothing is refitted or recomputed. Each
+# CSV the dashboard reads (in ARTIFACTS_DIR) -> the columns it uses. The loader checks
+# them, and tests/test_dashboard.py checks the committed files against this list.
+DASHBOARD_ARTIFACT_COLUMNS = {
+    "dq_summary.csv": ["check", "value"],
+    "dq_missingness.csv": ["column", "n_missing", "pct_missing",
+                           "default_rate_if_missing", "default_rate_if_present"],
+    "dq_categorical_levels.csv": ["column", "level", "n"],
+    "sql_model_input_ranges.csv": ["variable", "n_loans", "lower", "median", "upper"],
+    "sql_split_summary.csv": ["sample", "n_loans", "share_loans", "n_defaults", "default_rate"],
+    "sql_dq_missingness.csv": ["column_name", "n_missing", "share_missing",
+                               "default_rate_if_missing", "default_rate_if_present"],
+    "model_cv_metrics.csv": ["model", "fold", "auc", "gini", "ks", "brier"],
+    "model_coefficients.csv": ["feature", "coefficient", "odds_ratio", "sm_std_error", "sm_p_value",
+                               "expected_sign", "sign_matches_expected", "cv_sign_share"],
+    "model_screening.csv": ["feature", "iv_all", "iv_outside_equi", "kept", "reason"],
+    "model_sensitivity.csv": ["model", "fold", "auc", "gini", "ks", "brier"],
+    "validation_scope.csv": ["sample", "scope", "n_loans", "n_defaults", "observed_rate"],
+    "validation_metrics.csv": ["population", "n_loans", "auc", "gini", "ks", "brier"],
+    "validation_confidence_intervals.csv": ["metric", "estimate", "ci_lower", "ci_upper", "population"],
+    "validation_criteria.csv": ["criterion", "value", "status"],
+    "validation_calibration.csv": ["population", "n_loans", "mean_pd", "observed_rate", "binomial_p",
+                                   "calibration_intercept", "calibration_slope", "hl_p_value"],
+    "validation_calibration_deciles.csv": ["bin", "n_loans", "mean_pd", "observed_rate", "gap"],
+    "validation_segments.csv": ["variable", "level", "n_loans", "mean_pd", "observed_rate", "gap", "auc"],
+    "validation_coefficient_stability.csv": ["feature", "dev_coefficient", "holdout_coefficient",
+                                             "same_sign", "ci_overlap"],
+    "grades_scale.csv": ["grade", "pd_lower", "pd_upper", "grade_pd", "n_loans", "share",
+                         "observed_rate", "gap", "step_p_value"],
+    "grades_checks.csv": ["check", "value", "rule", "status"],
+    "grades_oof_check.csv": ["sample", "grade", "n_loans", "mean_pd", "observed_rate"],
+    "monitoring_psi.csv": ["variable", "role", "n_bins_used", "psi", "psi_expected_no_shift",
+                           "chi2_p_value", "light"],
+    "monitoring_psi_bins.csv": ["variable", "bin_order", "bin_label", "share_baseline",
+                                "share_monitored", "psi_contribution"],
+    "monitoring_watch_list.csv": ["kpi", "decision", "baseline_value", "monitored_value", "rule", "light"],
+    "monitoring_characteristic.csv": ["feature", "baseline_contribution", "monitored_contribution",
+                                      "change_in_log_odds"],
+    "monitoring_grade_backtest.csv": ["sample", "grade", "grade_pd", "n_loans", "observed_rate", "gap",
+                                      "binomial_p", "gap_light", "binomial_light"],
+    "monitoring_scope.csv": ["sample", "n_loans", "n_graded", "n_out_of_scope_equi", "out_of_scope_share"],
+}
+# Existing README figures reused where no interactive chart is drawn (in FIGURES_DIR).
+DASHBOARD_FIGURES = {
+    "leakage_indicators": "05_leakage_indicators.png",
+    "model_coefficients": "07_model_coefficients.png",
+    "leakage_demo_auc": "08_leakage_demo_auc.png",
+}
+CREDIT_TYPE_COL = "credit_type"  # read only for the scope check before scoring (D-026)
+# PSI chart axis (display only): at least PSI_CHART_MIN_AXIS x the amber limit, so the bands
+# are always visible, and never shorter than the largest PSI x PSI_CHART_HEADROOM, so a red
+# result is never cut off.
+PSI_CHART_MIN_AXIS = 1.2
+PSI_CHART_HEADROOM = 1.1
+# Before scoring, the loaded model's coefficients must equal model_coefficients.csv (D-029).
+# A technical tolerance, not a heuristic: the refit is deterministic and the CSV keeps full
+# precision, so only floating-point rounding is allowed.
+MODEL_COEFFICIENT_RTOL = 1e-9
+# D-029 (HEURISTIC): the scoring page warns when an input lies outside these quantiles
+# of in-scope development loans (sql/model_input_ranges.sql). A judgement call for this
+# project, not a standard: about 1% of development loans lie beyond each end.
+INPUT_RANGE_QUANTILES = (0.01, 0.99)
+INPUT_RANGE_VARIABLES = ["loan_amount", INCOME_CLEAN_COL]
+
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150
 COLOR_PRIMARY = "#2a78d6"    # single series / first series

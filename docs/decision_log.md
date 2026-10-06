@@ -531,6 +531,36 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - **Development backtest (reference only):** in-sample, every grade is within 2.3 pp of its grade PD. F is amber (+2.3 pp). B, F and H have binomial p < 0.01, as in Stage 7. The out-of-fold values are almost the same.
   - **No hold-out outcome is read:** `tests/test_monitoring.py` flips every hold-out `Status` and checks that no Stage 8 table changes. The SQL bin counts and PSI match an independent Python computation.
 
+### D-029 Stage 9 dashboard scope
+- **Type:** MODELLING CHOICE
+- **Status:** Agreed (Bruno, 2026-10-06, before the dashboard was built)
+- **Decision:** the Streamlit dashboard (`app.py`, helpers in `src/dashboard.py`) is a **read-only presentation layer**.
+  - It reads only the committed aggregate tables in `artifacts/*.csv` (`config.DASHBOARD_ARTIFACT_COLUMNS`) and three existing README figures. It refits nothing and computes no new metric. The only number it computes is the single-loan PD on the scoring page.
+  - No row-level borrower data is shown or written.
+  - The leakage-demonstration models (D-024) appear only as their committed CV results. They are never used for scoring in the dashboard.
+- **Model binary (option: optional load):** only the "Score a loan" page uses the frozen in-scope model, `artifacts/pd_model.joblib`. It is loaded with `holdout.load_frozen_model`, which checks the fitted feature names against `config.EXPECTED_SIGNS`. The file stays gitignored, so when it is missing (for example on GitHub) the page says how to build it and every other page still works. Options not chosen: CSV artifacts only, with no scoring page; or committing the binary, which would reverse the `.gitignore` rule and tie a pickle to the pinned scikit-learn version.
+- **Scoring guards:**
+  - `credit_type = EQUI` is refused as outside the model's scope (D-026). `credit_type` is used only for this check and is never a model input.
+  - The categorical inputs offer only the levels that the fitted encoder knows, so an unseen level cannot be scored (D-023).
+  - `loan_amount` must be > 0. Income must be > 0 or left blank, and blank income is scored as missing, as the model does for missing income (D-008, D-023).
+  - The PD is mapped to a grade with the same rule as `sql/grade_assignment.sql` (D-027).
+  - The result is labelled illustrative: it is not a credit decision.
+- **Coefficient check before scoring (Bruno, 2026-10-06):** before the score page scores anything, it compares the loaded model's coefficients, feature by feature, with the committed in-scope `model_coefficients.csv` (`dashboard.check_model_coefficients`). The relative tolerance is `config.MODEL_COEFFICIENT_RTOL`, which allows only floating-point rounding. On a mismatch, for example a stale or pre-D-026 binary with the same feature names, the page refuses to score and says how to rebuild the model.
+- **`lpsm` sensitivity on the Model page (Bruno, 2026-10-06):** the D-022 development-only CV without `lump_sum_payment` is shown from `model_sensitivity.csv`. It is labelled reported only and never acted on, and the D-017 limitation is stated next to it.
+- **Charts:** Plotly charts drawn from the CSVs (calibration, grades, PSI), and the existing PNGs where they already make the point (leakage, coefficients).
+- **Input ranges and starting values (HEURISTIC; Bruno, 2026-10-06; resolves the earlier known gap):**
+  - The scoring page warns when `loan_amount` or income lies below the 1st or above the 99th percentile (`config.INPUT_RANGE_QUANTILES`) of **in-scope development loans**, the loans the model was fitted on. The bounds are the quantiles themselves, which count as inside.
+  - The warning is amber, and the PD and grade are still shown: out of range is not out of scope (D-026), but the result is an extrapolation and less reliable. Blank income is never flagged.
+  - The quantiles and medians are computed by DuckDB in `sql/model_input_ranges.sql` and written by `python -m src.db` to `artifacts/sql_model_input_ranges.csv`. Only quantiles are written, never a minimum or maximum, which would be one borrower's value.
+  - The page starts from the in-scope development medians in the same table. It used to start from the medians of all loans in the raw columns.
+  - The 1% / 99% levels are a judgement call for this project, not a standard.
+- **Grade lookup (implementation finding, 2026-10-06):**
+  - **The finding:** the first version of `grade_for_pd` copied the SQL rule instead of reusing Stage 7's code, and had no range check. A PD of 1.5 was silently put in grade H, while -0.1 raised an error. When a test with PD 1.5 failed, its input was changed to -0.1 without review, and the change was left out of the Stage 9 report. That was a control failure: the test was changed to pass instead of the behaviour being questioned.
+  - **The fix:** the dashboard now grades through `grades.assign_grade`, which raises for a PD outside [`config.PD_MIN`, `config.PD_MAX`] or NaN and never grades or clips an impossible PD. The guard itself is recorded in D-027. The Stage 7 grade checks and the Stage 8 backtest use it too.
+  - **Scale check:** the dashboard checks `grades_scale.csv` whenever it loads it: the scale must run from 0 to 1 with no gaps or overlaps, rising boundaries and unique labels.
+  - **Tests:** the original 1.5 case is restored, next to -0.1 and NaN. A reconciliation test confirms the dashboard and Stage 7 give the same grade at every published boundary and just below it. Rebuilding Stages 2 to 8 left every committed table unchanged.
+- **Tests (`tests/test_dashboard.py`):** the loader and scoring guards on synthetic data; every committed table has the columns the dashboard uses; every page renders without an error (Streamlit `AppTest`); and, if the model is present, an in-scope loan is scored into a published grade while an EQUI loan is refused.
+
 ---
 
 ## Future enhancements (explicitly out of scope for the one-week MVP)

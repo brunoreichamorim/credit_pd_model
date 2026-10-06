@@ -47,6 +47,9 @@ ANALYSIS_QUERIES = {
         "equi": config.EQUI_LEVEL, "min_segment_size": config.SQL_MIN_SEGMENT_SIZE,
     },
     "split_summary": {},
+    "model_input_ranges": {
+        "q_lower": config.INPUT_RANGE_QUANTILES[0], "q_upper": config.INPUT_RANGE_QUANTILES[1],
+    },
 }
 
 # ---------------------------------------------------------------------------

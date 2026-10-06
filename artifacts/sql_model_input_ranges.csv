@@ -1,0 +1,3 @@
+variable,n_loans,lower,median,upper
+income_clean,86834,1260.0,5820.0,26580.0
+loan_amount,93391,66500.0,296500.0,846500.0
