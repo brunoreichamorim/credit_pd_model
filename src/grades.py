@@ -9,7 +9,8 @@ checked on out-of-fold PDs from the Stage 5 CV folds. No hold-out outcome is rea
 
     load_development_scores   ID, pd, Status of the in-scope development loans
     initial_edges             equal-count PD cut points to start from
-    assign_band               PD -> band number for a list of cut points
+    assign_band               value -> band number for a list of cut points (also used for monitoring bins)
+    assign_grade              PD -> grade number; rejects a PD outside [0, 1] or NaN
     band_counts               loans, defaults, mean PD and default rate per band
     step_p_values             one-sided test: does each band default more than the one below?
     merge_bands               merge adjacent bands until every D-027 rule holds; logs each merge
@@ -86,6 +87,20 @@ def assign_band(pd_values, edges: list[float]) -> np.ndarray:
     """Band number (0 = lowest PD) of each PD. A band covers lower <= pd < upper,
     the same rule as sql/grade_assignment.sql."""
     return np.searchsorted(np.asarray(edges, dtype=float), np.asarray(pd_values, dtype=float), side="right")
+
+
+def assign_grade(pd_values, edges: list[float]) -> np.ndarray:
+    """Grade number (0 = best grade) of each PD, with assign_band's rule. A PD below
+    config.PD_MIN, above config.PD_MAX or missing can only come from an upstream error,
+    so it raises instead of being graded or clipped (D-027)."""
+    values = np.asarray(pd_values, dtype=float)
+    invalid = np.isnan(values) | (values < config.PD_MIN) | (values > config.PD_MAX)
+    if invalid.any():
+        raise ValueError(
+            f"{int(invalid.sum())} PD value(s) outside [{config.PD_MIN}, {config.PD_MAX}] or missing, "
+            f"for example {values[invalid][0]}. A PD like this is an error and is not graded."
+        )
+    return assign_band(values, edges)
 
 
 def band_counts(pd_values, y, edges: list[float]) -> pd.DataFrame:
@@ -213,7 +228,7 @@ def out_of_fold_check(con: duckdb.DuckDBPyConnection, scale: pd.DataFrame) -> pd
     pd_oof, fold = model.out_of_fold_predictions(model.build_pipeline(), X, y)
     frame = pd.DataFrame({
         "fold": fold,
-        "grade": scale["grade"].to_numpy()[assign_band(pd_oof, scale["pd_lower"].iloc[1:].tolist())],
+        "grade": scale["grade"].to_numpy()[assign_grade(pd_oof, scale["pd_lower"].iloc[1:].tolist())],
         "pd": pd_oof,
         "y": y.to_numpy(float),
     })
@@ -282,7 +297,7 @@ def run_stage7(
 
     summary = summary.merge(scale[["grade", "pd_lower", "pd_upper"]], on="grade")
     summary["step_p_value"] = [np.nan, *step_p_values(summary)]
-    dev["grade"] = scale["grade"].to_numpy()[assign_band(dev["pd"], edges)]
+    dev["grade"] = scale["grade"].to_numpy()[assign_grade(dev["pd"], edges)]
     summary["binomial_p"] = summary["grade"].map(
         lambda g: validation.calibration_in_the_large(
             dev.loc[dev["grade"] == g, config.TARGET_COL], dev.loc[dev["grade"] == g, "pd"]

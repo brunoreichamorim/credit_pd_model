@@ -34,7 +34,8 @@ FIGURES_DIR = PROJECT_ROOT / "reports" / "figures"
 RANDOM_SEED = 42
 # 70% development/training set, with 5-fold cross-validation performed only
 # within the development/training set, and a 30% final hold-out test set used
-# once for final evaluation. Stratified random split on Status: this is
+# once by design for final evaluation (it was evaluated a second time after the
+# D-026 scope change; see D-025). Stratified random split on Status: this is
 # out-of-sample, NOT out-of-time, validation (D-004).
 TEST_SIZE = 0.30  # share of rows in the final hold-out test set
 CV_FOLDS = 5      # stratified folds, drawn from the development/training set only
@@ -163,7 +164,7 @@ MODEL_SCOPE_VIEW = "model_scope_dataset"
 
 # Sample labels stored in SPLIT_TABLE (D-013).
 SAMPLE_DEVELOPMENT = "development"  # 70%: model fitting and 5-fold CV
-SAMPLE_HOLDOUT = "holdout"          # 30%: final evaluation, used once
+SAMPLE_HOLDOUT = "holdout"          # 30%: final evaluation; used once by design, evaluated again after D-026 (D-025)
 
 SQL_N_BINS = 10  # equal-count bins (NTILE) in sql/risk_deciles.sql
 EQUI_LEVEL = "EQUI"  # credit_type level used only to show results "outside EQUI" (D-017)
@@ -265,6 +266,11 @@ LEAKAGE_ABLATION_MISSINGNESS_FEATURES = [
 MODEL_SCREENING_PATH = ARTIFACTS_DIR / "model_screening.csv"
 MODEL_CV_METRICS_PATH = ARTIFACTS_DIR / "model_cv_metrics.csv"
 MODEL_COEFFICIENTS_PATH = ARTIFACTS_DIR / "model_coefficients.csv"
+# D-022: development-only CV of the main model without these features, reported only
+# and never acted on (the lpsm question in D-017). The hold-out is not used.
+SENSITIVITY_DROPPED_FEATURES = ["lump_sum_payment"]
+LPSM_LEVEL = "lpsm"  # the lump_sum_payment level whose evidence sql/lpsm_evidence.sql reproduces (D-017)
+MODEL_SENSITIVITY_PATH = ARTIFACTS_DIR / "model_sensitivity.csv"
 
 # ---------------------------------------------------------------------------
 # Stage 6 validation and calibration  (src/validation.py; decision log D-025)
@@ -296,6 +302,7 @@ GRADE_MIN_SHARE = 0.05     # each grade holds at least this share of development
 GRADE_MAX_GRADES = 10      # upper limit on the number of grades (D-014)
 GRADE_EDGE_DECIMALS = 6    # boundaries are rounded once, so the published scale is the one applied
 GRADE_LABELS = "ABCDEFGHIJ"  # A = lowest PD
+PD_MIN, PD_MAX = 0.0, 1.0    # a PD outside [PD_MIN, PD_MAX] or NaN is an error, never graded or clipped
 GRADE_SCALE_TABLE = "grade_scale"  # grade, grade_rank, pd_lower, pd_upper, grade_pd
 PD_GRADES_VIEW = "pd_grades"       # pd_scores + grade (sql/grade_assignment.sql)
 GRADES_ARTIFACT_PREFIX = "grades_"  # artifacts/grades_*.csv

@@ -67,7 +67,9 @@ This methodology is agreed (decision log D-004, D-012, D-013). Do not change it 
 - 5-fold cross-validation only within the development/training data.
 - All preprocessing is fitted only on training data or training folds, inside a scikit-learn
   `Pipeline` / `ColumnTransformer`, so nothing leaks from validation or test data.
-- The hold-out test set is used once, for the final evaluation.
+- The hold-out test set is used once by design, for the final evaluation. It was evaluated a
+  second time after the D-026 scope change (D-025); any further look needs Bruno's approval and
+  a decision-log entry.
 - The primary model is an interpretable logistic regression.
 - This is out-of-sample, **not** out-of-time, validation: `year` is constant (2019), so the data
   has no time dimension.
@@ -75,16 +77,19 @@ This methodology is agreed (decision log D-004, D-012, D-013). Do not change it 
 - Planned evaluation: AUC, Gini, KS, Brier score, calibration, stability/monitoring and risk
   segmentation.
 
-## Critical open issue: possible target leakage
+## Target leakage: resolved, rules still apply
 
-Stage 2 found that `Interest_rate_spread` is missing **exactly** when `Status = 1`. Several
-other variables show similar near-perfect separation, for example missing `rate_of_interest`
-or `property_value`, and `credit_type = EQUI` (see D-011 and D-017).
+Stage 2 found that `Interest_rate_spread` is missing exactly when `Status = 1`, and other fields
+show near-perfect separation (D-011, D-017). Treatment, agreed after Stage 3:
 
-- Treat this as a major potential **target-leakage or dataset-construction** issue.
-- It must be investigated before any final modelling decision.
-- Do not drop, impute, encode, flag or use these variables as features without first
-  discussing the implications with Bruno.
+- those fields are excluded from the main model (D-017), and `credit_type = EQUI` is outside its
+  scope (D-026);
+- they appear only in the labelled leakage demonstration (D-024), never in scoring, grades,
+  monitoring or the dashboard;
+- the cause is unknown (D-017): call it possible leakage or a dataset-construction issue, never
+  established fact.
+
+Do not reintroduce these fields or change their treatment without discussing it with Bruno first.
 
 ## Documentation rules
 

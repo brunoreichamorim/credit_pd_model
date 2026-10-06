@@ -245,6 +245,24 @@ def test_cross_validate_model_returns_one_row_per_fold_plus_mean(toy_dev):
     assert set(coefficients["fold"]) == {1, 2, 3, 4, 5}
 
 
+def test_sensitivity_without_drops_only_the_named_feature(toy_dev):
+    # D-022 lpsm sensitivity: same folds and rows, one feature fewer; the main model is unchanged
+    X, y = toy_dev[config.MAIN_MODEL_FEATURES], toy_dev[config.TARGET_COL]
+    without = model.sensitivity_without(["lump_sum_payment"], X, y)
+    assert without["model"].unique().tolist() == ["without_lump_sum_payment"]
+    assert without["fold"].tolist() == [*range(1, config.CV_FOLDS + 1), "mean"]
+    reduced = model.build_pipeline(["Neg_ammortization", "loan_type", "loan_purpose"]).fit(X, y)
+    assert not any(name.startswith("lump_sum_payment") for name in model.feature_names(reduced))
+    main = model.build_pipeline().fit(X, y)
+    assert any(name.startswith("lump_sum_payment") for name in model.feature_names(main))
+
+
+def test_sensitivity_without_refuses_a_feature_it_cannot_drop(toy_dev):
+    X, y = toy_dev[config.MAIN_MODEL_FEATURES], toy_dev[config.TARGET_COL]
+    with pytest.raises(ValueError):
+        model.sensitivity_without(["loan_amount"], X, y)
+
+
 def test_information_value_is_higher_for_a_more_predictive_feature(toy_dev):
     # lump_sum_payment was built into the toy score; total_units is pure noise (constant, in fact)
     assert eda.information_value(toy_dev, "lump_sum_payment") > eda.information_value(toy_dev, "total_units")
@@ -312,6 +330,39 @@ def test_real_term_300_neg_amm_cell_is_the_anomaly(real_screening_data):
     cell = outside_equi[(outside_equi["term"] == 300) & (outside_equi["Neg_ammortization"] == "neg_amm")]
     assert len(cell) == 579
     assert cell[config.TARGET_COL].mean() == pytest.approx(0.914, abs=0.001)
+
+
+@needs_raw_data
+def test_real_lpsm_evidence_matches_d017(real_build):
+    # D-017 (corrected 2026-10-06): every lpsm figure in the decision log, reproduced
+    con = db.connect(real_build[0])
+    try:
+        evidence = db.run_query(con, "lpsm_evidence", sample=config.SAMPLE_DEVELOPMENT,
+                                level=config.LPSM_LEVEL, equi=config.EQUI_LEVEL).set_index("label")
+    finally:
+        con.close()
+    expected = {  # label: (loans, default rate)
+        "development": (2_326, 0.764), "outside_equi": (1_540, 0.644),
+        "outside_equi_type1": (1_096, 0.624), "outside_equi_type2": (302, 0.732),
+        "outside_equi_type3": (142, 0.613), "pricing_present": (536, 0.0), "all_six_present": (495, 0.0),
+    }
+    for label, (n_loans, rate) in expected.items():
+        assert evidence.loc[label, "n_loans"] == n_loans, label
+        assert evidence.loc[label, "default_rate"] == pytest.approx(rate, abs=0.0005), label
+    # with the pricing fields present, lpsm loans have no defaults at all: no row subset
+    # can separate lpsm from the extraction pattern
+    assert evidence.loc["pricing_present", "n_defaults"] == 0
+    equi_share = 1 - evidence.loc["outside_equi", "n_loans"] / evidence.loc["development", "n_loans"]
+    assert equi_share == pytest.approx(0.338, abs=0.0005)
+
+
+@needs_raw_data
+def test_real_sensitivity_is_written_and_reported_only(real_stage5):
+    # D-022: the without-lpsm CV is produced on the same folds; it never changes the main model
+    sensitivity = real_stage5["sensitivity"]
+    assert set(sensitivity["model"]) == {"main", "without_lump_sum_payment"}
+    main = real_stage5["cv_metrics"].query("model == 'main'").reset_index(drop=True)
+    pd.testing.assert_frame_equal(sensitivity.query("model == 'main'").reset_index(drop=True), main)
 
 
 @needs_raw_data

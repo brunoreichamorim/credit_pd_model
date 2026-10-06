@@ -54,6 +54,18 @@ def test_assign_band_puts_a_pd_on_a_boundary_in_the_upper_band():
     assert grades.assign_band([0.05, 0.1, 0.15, 0.2], [0.1, 0.2]).tolist() == [0, 1, 1, 2]
 
 
+@pytest.mark.parametrize("bad_pd", [1.5, -0.1, np.nan])
+def test_assign_grade_rejects_a_pd_outside_0_1_or_missing(bad_pd):
+    # D-027: an impossible PD is an upstream error; it is never graded or clipped
+    with pytest.raises(ValueError, match="not graded"):
+        grades.assign_grade([0.2, bad_pd], [0.1, 0.2])
+
+
+def test_assign_grade_uses_the_assign_band_rule_inside_0_1():
+    pd_values = [0.0, 0.05, 0.1, 0.15, 0.2, 1.0]
+    assert grades.assign_grade(pd_values, [0.1, 0.2]).tolist() == grades.assign_band(pd_values, [0.1, 0.2]).tolist()
+
+
 def test_step_p_values_small_for_a_real_step_and_large_for_a_step_down():
     counts = pd.DataFrame({"n_loans": [1_000, 1_000, 1_000], "n_defaults": [100, 200, 150]})
     p = grades.step_p_values(counts)

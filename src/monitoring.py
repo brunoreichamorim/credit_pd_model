@@ -334,13 +334,13 @@ def development_backtest(con: duckdb.DuckDBPyConnection, scale: pd.DataFrame) ->
     edges = scale["pd_lower"].iloc[1:].tolist()
     labels = scale["grade"].to_numpy()
     scores = grades.load_development_scores(con)
-    in_sample = grade_backtest(scores[config.TARGET_COL], labels[grades.assign_band(scores["pd"], edges)],
+    in_sample = grade_backtest(scores[config.TARGET_COL], labels[grades.assign_grade(scores["pd"], edges)],
                                scale, "development_in_sample")
     dev = model.load_development_data(con)
     pd_oof, _ = model.out_of_fold_predictions(
         model.build_pipeline(), dev[config.MAIN_MODEL_FEATURES], dev[config.TARGET_COL]
     )
-    out_of_fold = grade_backtest(dev[config.TARGET_COL], labels[grades.assign_band(pd_oof, edges)],
+    out_of_fold = grade_backtest(dev[config.TARGET_COL], labels[grades.assign_grade(pd_oof, edges)],
                                  scale, "development_out_of_fold")
     return pd.concat([in_sample, out_of_fold], ignore_index=True)
 

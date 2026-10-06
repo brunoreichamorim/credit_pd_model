@@ -88,7 +88,7 @@ Raw CSV → data-quality checks & cleaning → Parquet → DuckDB / SQL → mode
       → illustrative risk grades → monitoring (PSI) → Streamlit dashboard
 ```
 
-**Sampling design (decision [D-013](docs/decision_log.md)):** 70% development/training set, with 5-fold cross-validation performed only within the development/training set, and a 30% final hold-out test set used once for final evaluation. This is out-of-sample, not out-of-time, validation.
+**Sampling design (decision [D-013](docs/decision_log.md)):** 70% development/training set, with 5-fold cross-validation performed only within the development/training set, and a 30% final hold-out test set used once by design for final evaluation. It was evaluated a second time after the D-026 scope change (see D-025 and section 8), so the hold-out figures are not fully unbiased. This is out-of-sample, not out-of-time, validation.
 
 ## 6. SQL layer
 **Stage 4** (`src/db.py`, queries in [`sql/`](sql/)):
@@ -143,7 +143,7 @@ Fitted only on the development sample (D-013), and only on loans inside the mode
 
 **`loan_amount` changes sign in the model.** On its own, a larger loan goes with a *lower* default rate, because larger loans go to higher-income borrowers. With `income_clean` in the model (the two are correlated at about 0.63 in log scale), the coefficient is small and positive: for the same income, a larger loan means higher leverage. It is kept, and the reasoning is recorded in D-023. The coefficient table still flags the mismatch with the univariate prior rather than hiding it.
 
-**Leakage demonstration (option C, decision D-024).** A full model that adds back every D-017-excluded field, with their missing values kept visible, reaches a mean CV AUC of **1.000** on all development rows (EQUI included), and so does a model built from *only* the missing-value indicators of those fields (plus `credit_type`). This shows concretely how a model that ignored the D-017 investigation would look almost perfect while learning nothing about borrower risk. Neither leakage model is used for risk grades, monitoring or the dashboard.
+**Leakage demonstration (option C, decision D-024).** A full model that adds back every D-017-excluded field, with their missing values kept visible, reaches a mean CV AUC of **1.000** on all development rows (EQUI included), and so does a model built from *only* the missing-value indicators of those fields (plus `credit_type`). This shows concretely how a model that ignored the D-017 investigation would look almost perfect from the missingness pattern alone, a pattern whose cause is unknown (D-017), without evidence that it captures borrower risk. Neither leakage model is used for risk grades, monitoring or the dashboard.
 
 
 ## 8. Validation

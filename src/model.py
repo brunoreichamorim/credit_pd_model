@@ -13,6 +13,7 @@ single final evaluation (D-013).
     build_pipeline            preprocessor + LogisticRegression
     cross_validate_model      5-fold stratified CV: metrics and coefficients per fold
     out_of_fold_predictions   PD per row from the fold model that did not see it (Stage 7 check)
+    sensitivity_without       the same CV without a feature (D-022 lpsm sensitivity, reported only)
     fit_final_model           fit on the whole development sample; save to disk
     coefficient_table         sklearn + statsmodels coefficients, with expected signs
     run_leakage_demo          option C: full model + indicators-only ablation (D-024)
@@ -116,32 +117,34 @@ def _log_pipeline(impute: bool) -> Pipeline:
     return Pipeline(steps)
 
 
-def _main_categorical_pipeline() -> Pipeline:
+def _main_categorical_pipeline(categorical_features: list[str]) -> Pipeline:
     """Most-frequent impute -> one-hot encode with the fixed reference levels (D-023).
 
     handle_unknown="error": a level never seen in training (for example a new
     loan_type in the hold-out) raises instead of being scored silently as the
     reference level.
     """
-    reference = [config.REFERENCE_LEVELS[c] for c in config.CATEGORICAL_FEATURES]
+    reference = [config.REFERENCE_LEVELS[c] for c in categorical_features]
     return Pipeline([
         ("impute", SimpleImputer(strategy="most_frequent")),
         ("onehot", OneHotEncoder(drop=reference, handle_unknown="error", sparse_output=False)),
     ])
 
 
-def build_preprocessor() -> ColumnTransformer:
+def build_preprocessor(categorical_features: list[str] | None = None) -> ColumnTransformer:
     """The main model's preprocessing (D-023): log + standardise the two numeric
     features, a missing indicator for income_clean, and one-hot encode the four
     categorical features with the most frequent level as reference. Only the listed
-    columns are used; any other column in the input is dropped.
+    columns are used; any other column in the input is dropped. `categorical_features`
+    defaults to config.CATEGORICAL_FEATURES; only the D-022 sensitivity passes a shorter list.
     """
+    categorical = config.CATEGORICAL_FEATURES if categorical_features is None else categorical_features
     return ColumnTransformer(
         [
             ("income_log", _log_pipeline(impute=True), [config.INCOME_CLEAN_COL]),
             ("income_missing", MissingIndicator(features="all"), [config.INCOME_CLEAN_COL]),
             ("loan_amount_log", _log_pipeline(impute=False), ["loan_amount"]),
-            ("cat", _main_categorical_pipeline(), config.CATEGORICAL_FEATURES),
+            ("cat", _main_categorical_pipeline(categorical), categorical),
         ],
         remainder="drop",
         verbose_feature_names_out=True,
@@ -163,7 +166,7 @@ def feature_names(pipeline: Pipeline) -> list[str]:
     return [clean_feature_name(n) for n in pipeline["preprocess"].get_feature_names_out()]
 
 
-def build_pipeline() -> Pipeline:
+def build_pipeline(categorical_features: list[str] | None = None) -> Pipeline:
     """preprocessor + logistic regression. The main model is unpenalised (D-012):
     `C=np.inf` gives plain maximum-likelihood coefficients (sklearn's recommended
     way to fit unpenalised, `penalty=None` being deprecated), comparable with the
@@ -171,7 +174,7 @@ def build_pipeline() -> Pipeline:
     predicted probabilities stay calibrated to the development default rate.
     """
     model = LogisticRegression(C=np.inf, solver="lbfgs", max_iter=config.LOGIT_MAX_ITER)
-    return Pipeline([("preprocess", build_preprocessor()), ("model", model)])
+    return Pipeline([("preprocess", build_preprocessor(categorical_features)), ("model", model)])
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +228,19 @@ def out_of_fold_predictions(
         pd_oof[val_idx] = fold_pipeline.predict_proba(X.iloc[val_idx])[:, 1]
         fold_of_row[val_idx] = fold
     return pd_oof, fold_of_row
+
+
+def sensitivity_without(features: list[str], X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+    """D-022 lpsm sensitivity, reported only and never acted on: the main model without
+    `features`, scored with the same 5-fold CV on the same development rows. Returns one
+    row per fold plus a 'mean' row, labelled 'without_<feature>'."""
+    kept = [c for c in config.CATEGORICAL_FEATURES if c not in features]
+    unknown = sorted(set(features) - set(config.CATEGORICAL_FEATURES))
+    if unknown:
+        raise ValueError(f"Only categorical main-model features can be dropped here, not {unknown}.")
+    metrics, _ = cross_validate_model(build_pipeline(kept), X.drop(columns=features), y)
+    metrics.insert(0, "model", "without_" + "_".join(features))
+    return metrics
 
 
 def fit_final_model(X: pd.DataFrame, y: pd.Series, path: Path = config.MODEL_PATH) -> Pipeline:
@@ -431,6 +447,9 @@ def run_stage5(
 
         cv_metrics.insert(0, "model", "main")
         all_cv_metrics = pd.concat([cv_metrics, run_leakage_demo(con)], ignore_index=True)
+        sensitivity = pd.concat(
+            [cv_metrics, sensitivity_without(config.SENSITIVITY_DROPPED_FEATURES, X, y)], ignore_index=True
+        )
     finally:
         con.close()
 
@@ -438,10 +457,12 @@ def run_stage5(
     screening.to_csv(output_dir / config.MODEL_SCREENING_PATH.name, index=False)
     all_cv_metrics.to_csv(output_dir / config.MODEL_CV_METRICS_PATH.name, index=False)
     coefficients.to_csv(output_dir / config.MODEL_COEFFICIENTS_PATH.name, index=False)
+    sensitivity.to_csv(output_dir / config.MODEL_SENSITIVITY_PATH.name, index=False)
 
     if verbose:
         _print_report(screening, all_cv_metrics, coefficients)
-    return {"screening": screening, "cv_metrics": all_cv_metrics, "coefficients": coefficients}
+    return {"screening": screening, "cv_metrics": all_cv_metrics, "coefficients": coefficients,
+            "sensitivity": sensitivity}
 
 
 def _print_report(screening, cv_metrics, coefficients) -> None:
