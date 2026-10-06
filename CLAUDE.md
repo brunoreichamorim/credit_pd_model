@@ -120,6 +120,7 @@ Windows, project virtual environment `.venv`, Python 3.11.9. Run from the reposi
 .venv\Scripts\python.exe -m src.model               # fit the Stage 5 model and model_*.csv tables
 .venv\Scripts\python.exe -m src.holdout             # score the hold-out with the frozen model; validation_*.csv tables
 .venv\Scripts\python.exe -m src.grades              # build the Stage 7 illustrative grade scale; grades_*.csv tables
+.venv\Scripts\python.exe -m src.monitoring          # Stage 8 baseline and monitoring run; monitoring_*.csv tables
 ```
 
 - Run the relevant tests after every meaningful code change.

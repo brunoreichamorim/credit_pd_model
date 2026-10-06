@@ -355,6 +355,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
     - 9 of 10 terms keep their sign. The exception is `loan_purpose_p4`, which is not significant in either sample (development -0.003, hold-out +0.027, p = 0.45).
     - `income_clean`'s 95% intervals do not overlap: development -0.415, hold-out -0.350. Same direction, somewhat weaker on the hold-out.
   - **Out of scope:** 4,620 hold-out EQUI loans (100% default) and 10,678 development EQUI loans (99.99%) are counted in `validation_scope.csv`, but not scored.
+- **Note for Stage 8 (D-028; Bruno, 2026-10-06):** monitoring may compare the hold-out's **inputs and scores** with development. It reads no hold-out outcome, and no change to the model or grades may follow from it without approval.
 
 ### D-026 The main model's scope excludes `credit_type = EQUI`
 - **Type:** MODELLING CHOICE (the evidence is FACT)
@@ -429,6 +430,81 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - **Grade PD vs observed, in-sample (reported only):** every gap is within 2.3 pp. B is over-predicted by 1.9 pp, and F and H are under-predicted by 2.3 and 1.9 pp (binomial p < 0.01 for B, F and H).
   - **Scope:** 93,391 development and 39,981 hold-out loans are graded. 10,678 and 4,620 EQUI loans are not. No hold-out outcome is used; `tests/test_grades.py` flips every hold-out `Status` and checks that no Stage 7 table changes.
 - **Sensitivity (FACT; `notebooks/04_risk_grades.ipynb`, section 2):** with the same rules, the number of grades depends on technical settings: 8 with the adopted settings (20 bins, 6 decimals), 7 with boundaries to 9 decimals, and 10 with 19 starting bins. The shape is the same every time: one large grade over the flat lower half, then steadily rising grades up to a small grade above 50%. **Decision (Bruno, 2026-10-01):** keep the pre-set settings and the 8-grade result. No parameter is re-chosen after seeing the outcome. The exact number of grades is documented as not robust.
+
+### D-028 Stage 8 monitoring design and pre-set thresholds
+- **Type:** MODELLING CHOICE. The thresholds are HEURISTIC: judgement calls for this project, not regulatory standards.
+- **Status:** Agreed (Bruno, 2026-10-06). Written **before** the first monitoring run.
+- **What monitoring cannot show here:**
+  - `year` is 2019 for every loan (D-004). There is no later period, so there is no drift to detect.
+  - The split is random and stratified on `Status` (D-013). Two random samples of one population give a PSI close to zero by construction. The expected PSI with no shift is about (bins − 1) × (1/n₁ + 1/n₂), roughly 0.0003 for 10 bins with 93,391 and 39,981 loans.
+  - A green result therefore shows that the monitoring code works and passes a sanity check. **It is not evidence that the model is stable over time.**
+  - No outcomes arrive after development, so per-grade backtesting on a new period cannot be done for real.
+- **Comparison (D-025, option A):**
+  - The baseline is the in-scope development sample. The hold-out stands in for a "next period".
+  - Monitoring reads **only hold-out inputs and scores**: features, `pd_scores` and `pd_grades`. No hold-out `Status` is read.
+  - No change to the model or the grades may follow from a monitoring result without Bruno's approval.
+  - Options not chosen: fold-vs-fold PSI inside development only (it leaves the hold-out untouched, but is the weakest stand-in for a new period), or both.
+- **Backtest (option a):**
+  - Per-grade default rates are computed on **development** outcomes only, in-sample and out-of-fold. They are the reference a future backtest would be compared with. The hold-out stays outcome-free for the grades.
+  - Each grade's observed rate is compared with its grade PD (D-027). Lights reuse the D-025 thresholds: the gap uses `CRITERION_DECILE_GAP`, and the binomial p uses `CRITERION_BINOMIAL_P`.
+  - In-sample these lights are a reference, not a judgement: the grade PD was set on the same loans.
+- **Metrics:**
+  - PSI of the PD score;
+  - PSI of the 8 grades, and each grade's share;
+  - CSI (the same formula) of each of the 6 model features;
+  - a characteristic analysis: for each feature, coefficient × change in the mean of its transformed value. These terms add up to the change in mean log-odds;
+  - the out-of-scope (EQUI) share;
+  - the watch-list KPIs below;
+  - the per-grade backtest.
+
+  Not included: features that do not enter the score, and AUC or calibration on the monitored sample (that is validation, Stage 6).
+- **Binning:**
+  - The bins are frozen on development data and stored in DuckDB as `monitoring_baseline`. Later runs reuse them unchanged.
+  - Score and numeric features: `MONITORING_N_BINS = 10` equal-count development bins. Edges are rounded to 6 decimals, and repeated edges from tied values are kept once (`grades.initial_edges`). A bin covers lower ≤ value < upper.
+  - Every variable has a `<missing>` bin.
+  - Categorical features and grades: one bin per development level, plus `<missing>` and `<unseen>` (a level never seen in development). The encoder would fail on an unseen level (D-023).
+- **PSI:** Σ (a − e) × ln(a / e), over the share of loans in each bin. Shares are floored at `PSI_EPSILON = 1e-4` (HEURISTIC), so an empty bin gives a large but finite value.
+- **PSI / CSI lights (HEURISTIC; `PSI_THRESHOLDS`):**
+  - ≤ 0.10 green, ≤ 0.25 amber, > 0.25 red.
+  - This is the conventional credit-scoring rule of thumb, not a standard. The same rule applies to the score, the grades and the features.
+  - **Sample-size reference, reported without a judgement:** with no shift, PSI × n₁n₂/(n₁ + n₂) is approximately χ² with (non-empty bins − 1) degrees of freedom. Its p-value shows whether a PSI is larger than sampling noise alone.
+- **Watch list (HEURISTIC triggers; `WATCH_*` in `config.py`):**
+
+  | KPI | Risk | Green | Amber | Red |
+  |---|---|---|---|---|
+  | Share of loans in the top development `loan_amount` decile bin | D-023 misfit | ≤ 15% | ≤ 20% | > 20% |
+  | Share of loans in the top development `income_clean` decile bin | D-023 misfit | ≤ 15% | ≤ 20% | > 20% |
+  | Change in grade A's share, in percentage points | D-027 concentration | ≤ 5 pp | ≤ 10 pp | > 10 pp |
+  | Out-of-scope (EQUI) share of all loans | D-026 scope | ≤ 15% | ≤ 20% | > 20% |
+  | Share of `lump_sum_payment = lpsm` | D-023 rare-level rule | ≥ 1% | < 1% | n/a |
+  | Loans with a categorical level unseen in development | D-023 encoder | 0 | n/a | > 0 |
+
+  Once outcomes exist, the top-decile gap between observed and predicted default rates would be watched against the D-025 5 pp limit. Grade A's observed rate would be watched against its grade PD. Neither can be computed here.
+- **Actions** (in `docs/monitoring_plan.md`): green means no action. Amber means investigate and document. Red means escalate and consider recalibration or redevelopment, which needs Bruno's approval.
+- **Implementation:**
+  - `src/monitoring.py` (`python -m src.monitoring`);
+  - `sql/monitoring_bin_counts.sql`: the view `monitoring_bin_counts`, which bins every in-scope loan with a range join to `monitoring_baseline`;
+  - `sql/monitoring_psi.sql`: PSI contributions per bin;
+  - tables in `artifacts/monitoring_*.csv`, and notebook `notebooks/05_monitoring.ipynb`.
+  - The written monitoring plan is `docs/monitoring_plan.md`.
+- **First run (FACT; development 93,391 vs hold-out 39,981 in-scope loans, inputs only; `artifacts/monitoring_*.csv`):**
+  - **Every PSI / CSI is green, between 0.0000 and 0.0006.**
+    - score 0.0004, against 0.0003 expected from sampling noise alone;
+    - grade 0.0003;
+    - `income_clean` 0.0006: 11 bins, 10 deciles plus missing;
+    - `loan_amount` 0.0003.
+
+    No χ² p-value is below 0.05 (smallest 0.09, `income_clean`). This is the expected result for a random split. It is a sanity check, not evidence of stability.
+  - **Watch list, all green:**
+    - top `loan_amount` decile bin: 10.1% development, 9.8% hold-out;
+    - top `income_clean` decile bin: 9.4% and 9.3% (7.1% of incomes are missing and sit in their own bin);
+    - grade A: 45.0% and 44.9%;
+    - out-of-scope (EQUI) share: 10.26% and 10.36%;
+    - `lpsm`: 1.65% and 1.70%;
+    - no unseen levels.
+  - **Characteristic analysis:** the mean log-odds differs by −0.0025. The largest term is `Neg_ammortization` (−0.004).
+  - **Development backtest (reference only):** in-sample, every grade is within 2.3 pp of its grade PD. F is amber (+2.3 pp). B, F and H have binomial p < 0.01, as in Stage 7. The out-of-fold values are almost the same.
+  - **No hold-out outcome is read:** `tests/test_monitoring.py` flips every hold-out `Status` and checks that no Stage 8 table changes. The SQL bin counts and PSI match an independent Python computation.
 
 ---
 

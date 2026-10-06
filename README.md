@@ -212,13 +212,39 @@ These thresholds are heuristics, set before the final run. Each grade's PD is th
 
 ![Grade PD, observed default rate and loans per grade](reports/figures/12_risk_grades.png)
 
-## 10. Dashboard
+## 10. Monitoring
+**Stage 8** (`src/monitoring.py`, SQL in `sql/monitoring_*.sql`, notebook [`05_monitoring.ipynb`](notebooks/05_monitoring.ipynb), plan in [`docs/monitoring_plan.md`](docs/monitoring_plan.md)):
+
+```bash
+python -m src.monitoring    # needs pd_grades from Stage 7 (python -m src.grades)
+```
+
+**What this can and cannot show.** `year` is 2019 for every loan (D-004), and the hold-out is a random, stratified sample of the same population (D-013). There is no later period, so there is no drift to detect, and the PSI is close to zero by construction. The run shows that the monitoring works. **It is not evidence that the model is stable over time.**
+
+**Design (decision [D-028](docs/decision_log.md), set before the first run):**
+- **Baseline:** in-scope development loans. Bins are frozen on them and stored in DuckDB (`monitoring_baseline`).
+- **Monitored sample:** the hold-out, standing in for a "next period". Only its **inputs and scores** are read, never its outcomes (D-025).
+- **Metrics:** PSI of the PD score (10 development deciles), of the 8 grades, and of each of the 6 model features (with `<missing>` and `<unseen>` bins), plus a characteristic analysis and a watch list. The view `monitoring_bin_counts` bins every loan with a range join, and the PSI per bin is computed in SQL.
+- **Lights:** PSI ≤ 0.10 green, ≤ 0.25 amber, > 0.25 red. This is a conventional rule of thumb, not a standard. A χ² p-value is reported next to it, to show whether a PSI exceeds sampling noise.
+- **Per-grade backtest:** computed on development outcomes only, as the reference a future backtest would be compared with.
+
+**First run (development vs hold-out, in scope; `artifacts/monitoring_*.csv`):**
+- Every PSI is green, between 0.0000 and 0.0006. The score's PSI is 0.0004, against 0.0003 expected from sampling noise alone, and no χ² p-value is below 0.05.
+- **Watch list, all green.** These are the model's known weak points:
+  - top `loan_amount` / `income_clean` decile shares: 10.1% / 9.4% development, 9.8% / 9.3% hold-out (the D-023 misfit);
+  - grade A: 45.0% / 44.9% (D-027);
+  - EQUI share, which is not scored: 10.3% / 10.4% (D-026);
+  - no unseen categorical levels.
+
+![PSI by variable and grade shares, development vs hold-out](reports/figures/13_monitoring_psi.png)
+
+## 11. Dashboard
 *Stage 9. Screenshots will be added.*
 
-## 11. Results
+## 12. Results
 *To be filled with actual results. No numbers are reported before they have been produced.*
 
-## 12. Limitations
+## 13. Limitations
 *To be completed.* Known so far:
 - The default definition behind `Status` is undocumented (D-015).
 - `year` is 2019 for every loan, so the dataset has no genuine time dimension and true out-of-time validation is not possible (D-004).
@@ -228,8 +254,9 @@ These thresholds are heuristics, set before the final run. Each grade's PD is th
 - The hold-out was evaluated twice, before and after the D-026 refit, so the hold-out results are not a fully unbiased estimate (D-025).
 - The model under-predicts in the top `loan_amount` and `income_clean` deciles by about 3.5 pp, and for `loan_purpose = p2` by 4.3 pp (D-023, D-025).
 - The model does not separate risk among the lowest-PD half of loans, so the best illustrative grade holds 45% of loans. The number of grades (8) depends on technical settings of the grading rule (D-027).
+- Monitoring cannot detect drift: the data has no time dimension and the hold-out is a random sample of the same population, so the near-zero PSI is a sanity check, not evidence of stability. Per-grade backtesting needs outcomes from a new period (D-028).
 
-## 13. Technologies
+## 14. Technologies
 Python 3.11 · pandas · DuckDB (SQL) · scikit-learn · statsmodels · matplotlib · Plotly · Streamlit · pytest
 
 ---
@@ -276,6 +303,6 @@ credit_pd_model/
 | 5 | Baseline logistic regression PD model | ✅ |
 | 6 | Validation & calibration | ✅ |
 | 7 | Illustrative risk grades | ✅ |
-| 8 | Monitoring (PSI / stability) | ⏳ |
+| 8 | Monitoring (PSI / stability) | ✅ |
 | 9 | Streamlit dashboard | ⏳ |
 | 10 | Final documentation | ⏳ |

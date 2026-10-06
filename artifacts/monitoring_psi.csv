@@ -1,0 +1,9 @@
+variable,role,n_bins_used,n_baseline,n_monitored,psi,psi_expected_no_shift,chi2_statistic,chi2_df,chi2_p_value,light
+score,score,10,93391,39981,0.000399,0.000321,11.164827,9,0.26458,green
+loan_amount,feature,10,93391,39981,0.00032,0.000321,8.962225,9,0.440768,green
+income_clean,feature,11,93391,39981,0.00058,0.000357,16.245741,10,0.092811,green
+grade,grade,8,93391,39981,0.000293,0.00025,8.189789,7,0.316156,green
+lump_sum_payment,feature,2,93391,39981,1.3e-05,3.6e-05,0.373294,1,0.541214,green
+Neg_ammortization,feature,3,93391,39981,0.000136,7.1e-05,3.807355,2,0.14902,green
+loan_type,feature,3,93391,39981,2e-06,7.1e-05,0.045276,2,0.977616,green
+loan_purpose,feature,5,93391,39981,6.1e-05,0.000143,1.699483,4,0.790811,green

@@ -300,6 +300,32 @@ GRADE_SCALE_TABLE = "grade_scale"  # grade, grade_rank, pd_lower, pd_upper, grad
 PD_GRADES_VIEW = "pd_grades"       # pd_scores + grade (sql/grade_assignment.sql)
 GRADES_ARTIFACT_PREFIX = "grades_"  # artifacts/grades_*.csv
 
+# ---------------------------------------------------------------------------
+# Stage 8 monitoring  (src/monitoring.py; decision log D-028)
+# ---------------------------------------------------------------------------
+# Baseline = in-scope development loans. The hold-out stands in for a "next period":
+# only its inputs and scores are read, never its outcomes (D-025, D-028).
+MONITORING_N_BINS = 10           # equal-count development bins for the score and numeric features
+MONITORING_EDGE_DECIMALS = 6     # bin edges are rounded once, like the grade boundaries
+MONITORING_SCORE_VARIABLE = "score"  # name of the PD in the monitoring tables
+MONITORING_GRADE_VARIABLE = "grade"
+MONITORING_NUMERIC_VARIABLES = [MONITORING_SCORE_VARIABLE, "loan_amount", INCOME_CLEAN_COL]
+MONITORING_CATEGORICAL_VARIABLES = [MONITORING_GRADE_VARIABLE, *CATEGORICAL_FEATURES]
+MISSING_BIN_LABEL = "<missing>"  # every variable has one
+UNSEEN_BIN_LABEL = "<unseen>"    # categorical level never seen in development (D-023)
+# HEURISTIC thresholds, fixed BEFORE the first monitoring run (D-028). Judgement calls for
+# this project, not regulatory standards. (green limit, amber limit), both inclusive.
+PSI_EPSILON = 1e-4               # floor on each bin share, so an empty bin gives a finite PSI
+PSI_THRESHOLDS = (0.10, 0.25)    # conventional credit-scoring rule of thumb for PSI / CSI
+WATCH_TOP_DECILE_FEATURES = ["loan_amount", INCOME_CLEAN_COL]  # D-023 top-decile misfit
+WATCH_TOP_DECILE_SHARE = (0.15, 0.20)      # share of loans in the top development decile bin
+WATCH_GRADE_A_SHARE_CHANGE = (0.05, 0.10)  # |change| in the best grade's share (D-027)
+WATCH_OUT_OF_SCOPE_SHARE = (0.15, 0.20)    # EQUI share of all loans (D-026)
+WATCH_RARE_LEVEL = ("lump_sum_payment", "lpsm")  # amber if its share falls below RARE_LEVEL_MIN_SHARE
+MONITORING_BASELINE_TABLE = "monitoring_baseline"   # frozen development bins and counts
+MONITORING_BIN_COUNTS_VIEW = "monitoring_bin_counts"  # loans per bin and sample (sql/)
+MONITORING_ARTIFACT_PREFIX = "monitoring_"  # artifacts/monitoring_*.csv
+
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150
 COLOR_PRIMARY = "#2a78d6"    # single series / first series

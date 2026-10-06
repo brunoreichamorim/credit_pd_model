@@ -1,0 +1,7 @@
+kpi,decision,baseline_value,monitored_value,rule,light
+top_decile_share_loan_amount,D-023,0.100641,0.098297,"green <= 0.15, amber <= 0.2",green
+top_decile_share_income_clean,D-023,0.094099,0.092744,"green <= 0.15, amber <= 0.2",green
+grade_A_share_change,D-027,0.450033,0.448988,"|change| green <= 0.05, amber <= 0.1",green
+out_of_scope_share,D-026,0.102605,0.103585,"green <= 0.15, amber <= 0.2",green
+share_lump_sum_payment_lpsm,D-023,0.01649,0.016958,"green >= 0.01, else amber",green
+n_unseen_levels,D-023,0.0,0.0,"green = 0, else red",green

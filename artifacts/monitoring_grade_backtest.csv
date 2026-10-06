@@ -1,0 +1,17 @@
+sample,grade,grade_pd,n_loans,n_defaults,observed_rate,gap,binomial_p,gap_light,binomial_light
+development_in_sample,A,0.094953,42029,4034,0.095981,0.001028,0.469187,green,green
+development_in_sample,B,0.128174,9341,1017,0.108875,-0.0193,0.0,green,red
+development_in_sample,C,0.143742,9340,1317,0.141006,-0.002735,0.460906,green,green
+development_in_sample,D,0.164054,9327,1471,0.157714,-0.00634,0.099011,green,green
+development_in_sample,E,0.185156,4675,821,0.175615,-0.009541,0.093829,green,green
+development_in_sample,F,0.210848,4670,1090,0.233405,0.022557,0.00019,amber,red
+development_in_sample,G,0.283103,9339,2719,0.291145,0.008042,0.084946,green,green
+development_in_sample,H,0.516358,4670,2501,0.535546,0.019188,0.00877,green,red
+development_out_of_fold,A,0.094953,42062,4039,0.096025,0.001072,0.454166,green,green
+development_out_of_fold,B,0.128174,9287,1038,0.111769,-0.016405,2e-06,green,red
+development_out_of_fold,C,0.143742,9350,1279,0.136791,-0.00695,0.055355,green,green
+development_out_of_fold,D,0.164054,9354,1491,0.159397,-0.004657,0.229902,green,green
+development_out_of_fold,E,0.185156,4656,816,0.175258,-0.009898,0.082642,green,green
+development_out_of_fold,F,0.210848,4662,1082,0.232089,0.021242,0.000432,amber,red
+development_out_of_fold,G,0.283103,9354,2727,0.291533,0.00843,0.071593,green,green
+development_out_of_fold,H,0.516358,4666,2498,0.535362,0.019004,0.009521,green,red

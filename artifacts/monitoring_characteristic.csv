@@ -1,0 +1,8 @@
+feature,baseline_contribution,monitored_contribution,change_in_log_odds
+income_clean,-0.01551,-0.015053,0.000456
+loan_amount,-0.0,0.000259,0.000259
+lump_sum_payment,0.041062,0.042228,0.001166
+Neg_ammortization,0.110974,0.107005,-0.003968
+loan_type,0.085702,0.085961,0.000259
+loan_purpose,-0.032612,-0.033241,-0.000628
+total,0.189616,0.18716,-0.002456
