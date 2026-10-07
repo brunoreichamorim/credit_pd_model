@@ -185,6 +185,7 @@ The model was therefore refitted outside EQUI and the hold-out evaluated again (
 - Of the four pre-set criteria, three are green. One is amber: the largest gap between predicted and observed default rate in a PD decile is 2.5 pp (limit for green: 2 pp).
 - The model under-predicts for the largest loans and the highest incomes, by 3.4 pp and 3.5 pp in the top decile. Both gaps are inside the amber limit, and they are accepted as a documented limitation (D-023).
 - Coefficients refitted on the hold-out, as a diagnostic only, keep their sign for 9 of 10 terms. The exception, `loan_purpose = p4`, is not significant in either sample.
+
 ![ROC curve and KS on the in-scope hold-out](reports/figures/09_roc_ks.png)
 
 ![Calibration by PD decile on the in-scope hold-out](reports/figures/10_calibration_deciles.png)
