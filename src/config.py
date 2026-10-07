@@ -344,7 +344,6 @@ DASHBOARD_ARTIFACT_COLUMNS = {
     "dq_missingness.csv": ["column", "n_missing", "pct_missing",
                            "default_rate_if_missing", "default_rate_if_present"],
     "dq_categorical_levels.csv": ["column", "level", "n"],
-    "sql_model_input_ranges.csv": ["variable", "n_loans", "lower", "median", "upper"],
     "sql_split_summary.csv": ["sample", "n_loans", "share_loans", "n_defaults", "default_rate"],
     "sql_dq_missingness.csv": ["column_name", "n_missing", "share_missing",
                                "default_rate_if_missing", "default_rate_if_present"],
@@ -361,6 +360,8 @@ DASHBOARD_ARTIFACT_COLUMNS = {
                                    "calibration_intercept", "calibration_slope", "hl_p_value"],
     "validation_calibration_deciles.csv": ["bin", "n_loans", "mean_pd", "observed_rate", "gap"],
     "validation_segments.csv": ["variable", "level", "n_loans", "mean_pd", "observed_rate", "gap", "auc"],
+    "validation_feature_deciles.csv": ["variable", "bin", "bin_min", "bin_max", "n_loans", "mean_pd",
+                                       "observed_rate", "gap"],
     "validation_coefficient_stability.csv": ["feature", "dev_coefficient", "holdout_coefficient",
                                              "same_sign", "ci_overlap"],
     "grades_scale.csv": ["grade", "pd_lower", "pd_upper", "grade_pd", "n_loans", "share",
@@ -378,32 +379,228 @@ DASHBOARD_ARTIFACT_COLUMNS = {
                                       "binomial_p", "gap_light", "binomial_light"],
     "monitoring_scope.csv": ["sample", "n_loans", "n_graded", "n_out_of_scope_equi", "out_of_scope_share"],
 }
-# Existing README figures reused where no interactive chart is drawn (in FIGURES_DIR).
-DASHBOARD_FIGURES = {
-    "leakage_indicators": "05_leakage_indicators.png",
-    "model_coefficients": "07_model_coefficients.png",
-    "leakage_demo_auc": "08_leakage_demo_auc.png",
+# Presentation (D-030). Page key -> sidebar name, in reading order.
+DASHBOARD_PAGES = {
+    "overview": "1. Overview",
+    "leakage": "2. Data leakage",
+    "model": "3. Model",
+    "validation": "4. Validation",
+    "grades": "5. Risk grades",
+    "monitoring": "6. Monitoring",
 }
-CREDIT_TYPE_COL = "credit_type"  # read only for the scope check before scoring (D-026)
-# PSI chart axis (display only): at least PSI_CHART_MIN_AXIS x the amber limit, so the bands
-# are always visible, and never shorter than the largest PSI x PSI_CHART_HEADROOM, so a red
-# result is never cut off.
-PSI_CHART_MIN_AXIS = 1.2
-PSI_CHART_HEADROOM = 1.1
-# Before scoring, the loaded model's coefficients must equal model_coefficients.csv (D-029).
-# A technical tolerance, not a heuristic: the refit is deterministic and the CSV keeps full
-# precision, so only floating-point rounding is allowed.
-MODEL_COEFFICIENT_RTOL = 1e-9
-# D-029 (HEURISTIC): the scoring page warns when an input lies outside these quantiles
-# of in-scope development loans (sql/model_input_ranges.sql). A judgement call for this
-# project, not a standard: about 1% of development loans lie beyond each end.
+# Decision-log entries linked at the end of each page ("Further reading").
+DASHBOARD_PAGE_DECISIONS = {
+    "overview": ["D-001", "D-004", "D-013", "D-015", "D-026", "D-029", "D-030"],
+    "leakage": ["D-011", "D-017", "D-024"],
+    "model": ["D-012", "D-022", "D-023"],
+    "validation": ["D-004", "D-025", "D-026"],
+    "grades": ["D-014", "D-027"],
+    "monitoring": ["D-028"],
+}
+# Links point to the decision log on GitHub's main branch (Bruno, D-030); they resolve
+# once this work is merged into main.
+REPO_URL = "https://github.com/brunoreichamorim/credit_pd_model"
+DOCS_GIT_REF = "main"
+DECISION_LOG_PATH = PROJECT_ROOT / "docs" / "decision_log.md"
+# Model names as written in model_cv_metrics.csv / model_sensitivity.csv (src/model.py).
+CV_MODEL_MAIN = "main"
+CV_MODEL_LEAKAGE_FULL = "leakage_full"
+CV_MODEL_LEAKAGE_ABLATION = "leakage_ablation_indicators_only"
+CV_MEAN_ROW = "mean"
+CV_MODEL_LABELS = {
+    CV_MODEL_MAIN: "Main model",
+    CV_MODEL_LEAKAGE_FULL: "Leakage model",
+    CV_MODEL_LEAKAGE_ABLATION: "Missing-value flags only",
+}
+
+# Display formats (display only; the CSVs keep full precision).
+DISPLAY_METRIC_DECIMALS = 3   # AUC, Gini, KS, Brier
+DISPLAY_RATE_DECIMALS = 1     # rates and shares, in %
+DISPLAY_SPLIT_DECIMALS = 0    # development / hold-out shares on the Overview pipeline
+DISPLAY_PSI_DECIMALS = 4
+DISPLAY_TABLE_DECIMALS = 4    # other numbers in detail tables
+DISPLAY_P_VALUE_FLOOR = 0.001  # smaller p-values are shown as "< 0.001"
+DISPLAY_P_VALUE_DECIMALS = 3
+# Columns shown as a percentage (stored as a fraction) and as a whole count.
+PERCENT_COLUMNS = {
+    "share_missing", "default_rate_if_missing", "default_rate_if_present", "share_loans",
+    "default_rate", "observed_rate", "mean_pd", "gap", "pd_min", "pd_max", "pd_lower",
+    "pd_upper", "grade_pd", "share", "share_baseline", "share_monitored", "out_of_scope_share",
+    "cv_sign_share",
+}
+COUNT_COLUMNS = {
+    "n", "n_missing", "n_loans", "n_defaults", "n_baseline", "n_monitored", "n_graded",
+    "n_out_of_scope_equi", "n_in_scope_not_graded", "n_bins_used", "hl_df", "chi2_df",
+}
+P_VALUE_COLUMNS = {
+    "sm_p_value", "binomial_p", "hl_p_value", "step_p_value", "chi2_p_value", "holdout_p_value",
+}
+# Plain column labels for every table the dashboard shows.
+COLUMN_LABELS = {
+    "check": "Check", "value": "Value", "rule": "Rule", "status": "Status", "light": "Light",
+    "column": "Field", "column_name": "Field", "field": "Field", "feature": "Field",
+    "variable": "Variable", "level": "Level", "reason": "Reason", "decision": "Decision",
+    "n": "Loans", "pct": "% of loans", "default_rate": "Default rate",
+    "n_missing": "Loans missing", "pct_missing": "% missing", "share_missing": "Share missing",
+    "default_rate_if_missing": "Default rate if missing",
+    "default_rate_if_present": "Default rate if present",
+    "sample": "Sample", "scope": "Scope", "population": "Population", "model": "Model",
+    "fold": "Fold", "n_loans": "Loans", "n_defaults": "Defaults", "share_loans": "Share of loans",
+    "lower": "Lower bound", "median": "Median", "upper": "Upper bound",
+    "auc": "AUC", "gini": "Gini", "ks": "KS", "brier": "Brier score",
+    "coefficient": "Coefficient", "odds_ratio": "Odds ratio",
+    "sm_coefficient": "Coefficient (statsmodels)", "sm_std_error": "Standard error",
+    "sm_p_value": "p-value", "expected_sign": "Expected sign",
+    "sign_matches_expected": "Sign as expected", "cv_sign_share": "Same sign in CV folds",
+    "iv_all": "Information value, all loans", "iv_outside_equi": "Information value, in scope",
+    "kept": "Kept",
+    "metric": "Metric", "estimate": "Estimate", "ci_lower": "CI lower", "ci_upper": "CI upper",
+    "criterion": "Criterion", "mean_pd": "Mean PD", "observed_rate": "Observed default rate",
+    "gap": "Gap (observed − PD)", "binomial_p": "Binomial test p-value",
+    "calibration_intercept": "Calibration intercept", "calibration_slope": "Calibration slope",
+    "hl_statistic": "Hosmer-Lemeshow statistic", "hl_df": "Hosmer-Lemeshow df",
+    "hl_p_value": "Hosmer-Lemeshow p-value",
+    "bin": "Decile", "pd_min": "Lowest PD", "pd_max": "Highest PD",
+    "bin_min": "Lowest value", "bin_max": "Highest value",
+    "holdout_coefficient": "Hold-out coefficient", "holdout_std_error": "Hold-out standard error",
+    "holdout_p_value": "Hold-out p-value", "dev_coefficient": "Development coefficient",
+    "dev_std_error": "Development standard error", "same_sign": "Same sign",
+    "ci_overlap": "Confidence intervals overlap",
+    "grade": "Grade", "grade_rank": "Grade rank", "pd_lower": "PD from", "pd_upper": "PD up to",
+    "grade_pd": "Grade PD", "share": "Share of loans", "step_p_value": "Step test p-value",
+    "role": "Role", "n_bins_used": "Bins", "n_baseline": "Loans, development",
+    "n_monitored": "Loans, hold-out", "psi": "PSI",
+    "psi_expected_no_shift": "PSI expected with no shift", "chi2_statistic": "Chi-square statistic",
+    "chi2_df": "Chi-square df", "chi2_p_value": "Chi-square p-value",
+    "bin_order": "Bin number", "bin_label": "Bin", "share_baseline": "Share, development",
+    "share_monitored": "Share, hold-out", "psi_contribution": "PSI contribution",
+    "kpi": "Indicator", "baseline_value": "Development value", "monitored_value": "Hold-out value",
+    "baseline_contribution": "Mean contribution, development",
+    "monitored_contribution": "Mean contribution, hold-out",
+    "change_in_log_odds": "Change in log-odds",
+    "n_graded": "Loans graded", "n_out_of_scope_equi": "Out of scope (EQUI)",
+    "n_in_scope_not_graded": "In scope, not graded", "out_of_scope_share": "Share out of scope",
+    "gap_light": "Gap light", "binomial_light": "Binomial test light",
+}
+# Traffic lights in tables and tiles: an icon with its word, never colour alone.
+LIGHT_LABELS = {"green": "🟢 green", "amber": "🟠 amber", "red": "🔴 red",
+                "pass": "🟢 pass", "report": "⚪ reported"}
+LIGHT_COLUMNS = {"status", "light", "gap_light", "binomial_light"}
+# Headline tiles: id -> short label ({placeholders} are filled from the CSVs).
+# Short labels: each side panel has one caption with the shared context
+# (dashboard_text.PANEL_CAPTIONS), and each tile's "?" help gives the full meaning.
+TILE_LABELS = {
+    "cv_auc_main": "Main model",
+    "cv_auc_leakage_full": "Leakage model",
+    "cv_auc_leakage_ablation": "Missing-value flags",
+    "n_features": "Fields",
+    "cv_auc": "CV AUC",
+    "cv_auc_without": "Without {fields}",
+    "holdout_auc": "AUC",
+    "holdout_gini": "Gini",
+    "holdout_ks": "KS",
+    "holdout_brier": "Brier score",
+    "holdout_mean_pd": "Mean PD",
+    "holdout_observed": "Observed rate",
+    "criteria_green": "Criteria green",
+    "n_grades": "Grades",
+    "first_grade_share": "Share in grade {grade}",
+    "top_grade_rate": "Observed rate, grade {grade}",
+    "largest_psi": "Largest PSI ({variable})",
+    "watch_green": "Watch list green",
+    "equi_share_holdout": "EQUI share, hold-out",
+}
+# Readable names on charts and tiles (display only; tables keep COLUMN_LABELS).
+VARIABLE_LABELS = {
+    "score": "model score (PD)", "grade": "risk grade",
+    "loan_amount": "loan amount", INCOME_CLEAN_COL: "income",
+    "lump_sum_payment": "lump-sum payment", "Neg_ammortization": "negative amortisation",
+    "loan_type": "loan type", "loan_purpose": "loan purpose",
+    "Interest_rate_spread": "interest rate spread", "rate_of_interest": "interest rate",
+    "property_value": "property value", "Upfront_charges": "upfront charges",
+    "dtir1": "debt-to-income (dtir1)", "age": "age", "credit_type": "credit type",
+}
+# Model coefficients (model_coefficients.csv `feature`) -> readable name.
+COEFFICIENT_LABELS = {
+    INCOME_CLEAN_COL: "income (log, standardised)",
+    f"{INCOME_CLEAN_COL}_missing": "income missing",
+    "loan_amount": "loan amount (log, standardised)",
+    "lump_sum_payment_lpsm": "lump-sum payment",
+    "Neg_ammortization_neg_amm": "negative amortisation",
+    "loan_type_type2": "loan type: type2", "loan_type_type3": "loan type: type3",
+    "loan_purpose_p1": "loan purpose: p1", "loan_purpose_p2": "loan purpose: p2",
+    "loan_purpose_p3": "loan purpose: p3", "loan_purpose_p4": "loan purpose: p4",
+}
+# Light as an icon only (pipeline strip) and as a badge colour (Monitoring side panel).
+LIGHT_ICONS = {"green": "🟢", "amber": "🟠", "red": "🔴"}
+GRADE_OOF_POOLED = "pooled"  # the pooled-folds rows of grades_oof_check.csv (src/grades.py)
+LIGHT_BADGE_COLORS = {"green": "green", "amber": "orange", "red": "red"}
+LIGHT_BADGE_ICONS = {"green": ":material/check_circle:", "amber": ":material/warning:",
+                     "red": ":material/error:"}
+# D-029 (HEURISTIC): in-scope development input ranges written by sql/model_input_ranges.sql
+# to sql_model_input_ranges.csv. A judgement call for this project, not a standard: about 1%
+# of development loans lie beyond each end. The table stays in the pipeline; since the
+# scoring page was removed (D-030) the dashboard no longer reads it.
 INPUT_RANGE_QUANTILES = (0.01, 0.99)
 INPUT_RANGE_VARIABLES = ["loan_amount", INCOME_CLEAN_COL]
-# D-030: the scoring page is off by default. It runs only when this environment variable
-# equals SCORING_ENV_ON (set locally), the model file exists and its coefficients match
-# model_coefficients.csv. A public copy therefore never scores, even if the binary is present.
-SCORING_ENV_VAR = "PD_DASHBOARD_SCORING"
-SCORING_ENV_ON = "on"
+
+# Dashboard theme and chart colours (D-030): a fixed dark theme built only from documented
+# values of the dataviz reference palette (dark column). .streamlit/config.toml mirrors
+# DASHBOARD_THEME; tests/test_dashboard.py checks that the two agree.
+DASHBOARD_THEME = {
+    "base": "dark",
+    "backgroundColor": "#1a1a19",           # dark chart surface (the surface the palette was validated on)
+    "secondaryBackgroundColor": "#2c2c2a",  # dark gridline step
+    "textColor": "#ffffff",                 # dark primary ink
+    "primaryColor": "#3987e5",              # dark categorical slot 1
+    "chartCategoricalColors": ["#3987e5", "#d95926", "#199e70", "#c98500",
+                               "#d55181", "#008300", "#9085e9", "#e66767"],
+}
+DASHBOARD_SIDEBAR_BACKGROUND = "#0d0d0d"    # dark page plane
+# Colour roles in the Plotly charts. At most series_1 and series_2 appear together.
+DASHBOARD_COLORS = {
+    "series_1": "#3987e5",  # main model, grade PD, mean PD, development, raises PD
+    "series_2": "#d95926",  # if missing, observed rate, hold-out, lowers PD
+    "muted": "#898781",     # reference lines and de-emphasised marks
+}
+# Chart display settings (display only).
+CHART_DIMMED_OPACITY = 0.35   # grades not selected on the grade chart
+CHART_MARKER_SIZE = 10        # dots on the calibration and segment charts (dataviz: >= 8 px)
+CHART_RATE_AXIS_MAX = 1.05    # x-axis end of 0-1 rate and AUC charts, room for value labels
+# Chart heights for a 1920x1080 screen with the browser maximised: title, chart and side
+# panel fit above the fold (D-030). Narrower windows stay usable.
+DASHBOARD_CHART_HEIGHT = 420
+DASHBOARD_HERO_HEIGHT = 340   # Overview hero chart, under the pipeline row
+CHART_BAND_OPACITY = 0.18     # light band behind the selected grade
+CHART_SELECTED_MARKER_SIZE = 16
+AUC_COIN_FLIP = 0.5           # AUC of random ranking (a definition, drawn as a reference line)
+GRADE_SLIDER_STEP = 0.1       # grade slider step, in PD percentage points
+# Figure 05 fields redrawn on the Data leakage page (from sql_dq_missingness.csv), in the
+# figure's order. `income = 0` is not shown: no committed table holds it (D-030).
+LEAKAGE_CHART_FIELDS = ["Interest_rate_spread", "rate_of_interest", "property_value",
+                        "Upfront_charges", "dtir1", "age"]
+# The category shown as one bar next to them (dq_categorical_levels.csv): column, level.
+LEAKAGE_CHART_CATEGORY = ("credit_type", EQUI_LEVEL)
+LEAKAGE_README_FIGURE = "05_leakage_indicators.png"  # the README figure this chart redraws
+# "Where the model misses" views on the Validation page: view -> (label, source).
+# Deciles come from validation_feature_deciles.csv, levels from validation_segments.csv;
+# both are D-025 pre-set checks on the hold-out.
+MISS_VIEWS = {
+    "loan_amount": ("Loan amount deciles", "deciles"),
+    INCOME_CLEAN_COL: ("Income deciles", "deciles"),
+    "loan_purpose": ("Loan purpose", "segments"),
+    "loan_type": ("Loan type", "segments"),
+}
+# Overview pipeline strip: step id -> (label, Material icon).
+PIPELINE_STEPS = {
+    "raw": ("Raw data", ":material/database:"),
+    "split": ("Split", ":material/call_split:"),
+    "scope": ("In scope", ":material/filter_alt:"),
+    "model": ("Model", ":material/functions:"),
+    "validation": ("Validation", ":material/fact_check:"),
+    "grades": ("Grades", ":material/stacked_bar_chart:"),
+    "monitoring": ("Monitoring", ":material/monitoring:"),
+}
 
 # Chart style for static matplotlib figures (light mode).
 FIGURE_DPI = 150

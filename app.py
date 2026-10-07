@@ -1,13 +1,19 @@
-"""Stage 9: Streamlit dashboard for the credit risk PD project (decision log D-029).
+"""Stage 9: Streamlit dashboard for the credit risk PD project (decision log D-029, D-030).
 
 A read-only view of the results that Stages 2-8 wrote to artifacts/. Nothing is
-refitted and no metric is recomputed here. The optional "Score a loan" page is off
-by default (D-030); when switched on, it uses the frozen in-scope model if
-artifacts/pd_model.joblib exists (it is gitignored).
+refitted, no metric is recomputed and no model is loaded: the loan-scoring page was
+removed (D-030). The grade slider is a lookup in the committed grade scale.
 
-Run from the project root (PowerShell; the first line switches scoring on):
+Layout (D-030, sized for a 1920x1080 screen with the browser maximised): every page
+has a title and a one-line subtitle, then one prominent chart in two thirds of the
+width (its "?" says how to read it) next to a side panel with the headline tiles in a
+2-column grid and the page's caveat. Detail tables sit in expanders, and the page ends
+with its decision-log links and a "Next" button. Sentences live in
+src/dashboard_text.py, charts in src/dashboard_charts.py, settings in src/config.py.
+The theme is a fixed dark theme (.streamlit/config.toml).
 
-    $env:PD_DASHBOARD_SCORING = "on"
+Run from the project root:
+
     .venv\\Scripts\\python.exe -m streamlit run app.py
 """
 
@@ -17,18 +23,17 @@ import streamlit as st
 
 from src import config
 from src import dashboard
-from src import dashboard_text
-from src import grades
-from src import holdout
+from src import dashboard_charts as charts
+from src import dashboard_text as text
 
-DISCLAIMER = (
-    "**Educational project.** This is not an official bank credit-scoring system, it does not "
-    "make underwriting decisions and it makes no claim of regulatory compliance. The risk "
-    "grades are illustrative internal grades for this project."
-)
-LIGHTS = {"green": "🟢 green", "amber": "🟠 amber", "red": "🔴 red", "pass": "🟢 pass", "report": "⚪ reported"}
+st.set_page_config(page_title="Credit risk PD model", page_icon=":material/analytics:", layout="wide")
 
-st.set_page_config(page_title="Credit Risk PD Model", layout="wide")
+PAGE_KEY = "page"  # session-state key of the sidebar radio
+NUMBER_FORMATS = {
+    "percent": st.column_config.NumberColumn(format="percent"),
+    "count": st.column_config.NumberColumn(format="localized"),
+    "decimal": st.column_config.NumberColumn(format=f"%.{config.DISPLAY_TABLE_DECIMALS}f"),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -42,44 +47,82 @@ def table(name: str) -> pd.DataFrame:
     return dashboard.load_artifact(name)
 
 
-@st.cache_resource
-def frozen_model():
-    """The frozen in-scope model, or None if it has not been built locally."""
-    return dashboard.load_model_if_available()
+@st.cache_data
+def links(page: str) -> list[tuple[str, str]]:
+    return dashboard.decision_links(config.DASHBOARD_PAGE_DECISIONS[page])
 
 
-def show(df: pd.DataFrame, percent: tuple[str, ...] = (), decimals: int = 4) -> None:
-    """A table with rates as percentages and other floats rounded."""
-    columns = {}
-    for col in df.columns:
-        if col in percent:
-            columns[col] = st.column_config.NumberColumn(format="percent")
-        elif pd.api.types.is_float_dtype(df[col]):
-            columns[col] = st.column_config.NumberColumn(format=f"%.{decimals}f")
-    st.dataframe(df, column_config=columns, hide_index=True, width="stretch")
+def show(df: pd.DataFrame) -> None:
+    """A table with plain column labels, rates as percentages and counts with separators."""
+    column_config = {label: NUMBER_FORMATS[kind] for label, kind in dashboard.column_formats(df).items()}
+    st.dataframe(dashboard.readable_table(df), column_config=column_config, hide_index=True, width="stretch")
 
 
-def with_lights(df: pd.DataFrame, columns: tuple[str, ...]) -> pd.DataFrame:
-    """Replace green/amber/red (and pass/report) with a coloured marker."""
-    df = df.copy()
-    for col in columns:
-        df[col] = df[col].map(lambda v: LIGHTS.get(v, v))
-    return df
+def details(title: str):
+    return st.expander(f"Details: {title}", icon=":material/table_chart:")
 
 
-def figure(key: str) -> None:
-    """One of the README figures listed in config.DASHBOARD_FIGURES."""
-    path = config.FIGURES_DIR / config.DASHBOARD_FIGURES[key]
-    if path.exists():
-        st.image(str(path))
+def chart(page: str, key: str, fig: go.Figure) -> None:
+    """A chart under its title; the title's "?" says how to read it."""
+    title, how_to_read = text.PAGES[page]["charts"][key]
+    st.subheader(title, help=how_to_read)
+    st.plotly_chart(fig, key=f"chart_{page}_{key}")
+
+
+def grid(items: list, columns: int = 2):
+    """Yield (column, item) pairs that fill a grid row by row, so cards line up evenly."""
+    for start in range(0, len(items), columns):
+        for column, item in zip(st.columns(columns), items[start:start + columns]):
+            yield column, item
+
+
+def page_start(page: str):
+    """Title and subtitle, then the two layout columns: (chart, side panel)."""
+    st.title(dashboard.page_title(page))
+    st.caption(text.PAGES[page]["subtitle"])
+    return st.columns([2, 1], gap="large")
+
+
+def caveat(page: str) -> None:
+    if page in text.CAVEATS:
+        box, message = text.CAVEATS[page]
+        if box == "warning":
+            st.warning(message, icon=":material/warning:")
+        else:
+            st.info(message, icon=":material/info:")
+
+
+def side_panel(page: str) -> None:
+    """The panel caption, the page's tiles in a 2-column grid (each with "?" help)."""
+    st.caption(text.PANEL_CAPTIONS[page])
+    for column, tile in grid(dashboard.page_tiles(page, table)):
+        column.metric(tile.label, tile.value, help=tile.help, border=True)
+
+
+def side_notes(page: str) -> None:
+    """The page's caveat and its EQUI note, under the tiles."""
+    caveat(page)
+    if page in text.EQUI_CAPTION:
+        st.caption(text.EQUI_CAPTION[page])
+
+
+def go_to(page: str) -> None:
+    st.session_state[PAGE_KEY] = config.DASHBOARD_PAGES[page]
+
+
+def footer(page: str) -> None:
+    """The page's decision-log entries (short ids, linked), then a button to the next page
+    (on the last page, back to the first)."""
+    items = " · ".join(f"[{heading.split(' ', 1)[0]}]({url})" for heading, url in links(page))
+    st.markdown(f"**Decision log:** {items}")
+    following = dashboard.next_page(page)
+    if following:
+        st.button(f"Next: {config.DASHBOARD_PAGES[following]}", icon=":material/arrow_forward:",
+                  on_click=go_to, args=(following,), key=f"next_{page}")
     else:
-        st.info(f"Figure {path.name} is not available.")
-
-
-def chart_layout(fig: go.Figure, x_title: str, y_title: str) -> go.Figure:
-    fig.update_layout(xaxis_title=x_title, yaxis_title=y_title, margin=dict(t=30, b=10),
-                      legend=dict(orientation="h", y=1.1))
-    return fig
+        first = next(iter(config.DASHBOARD_PAGES))
+        st.button(f"{text.BACK_TO_START} {config.DASHBOARD_PAGES[first]}", icon=":material/arrow_upward:",
+                  on_click=go_to, args=(first,), key=f"back_{page}")
 
 
 # ---------------------------------------------------------------------------
@@ -88,328 +131,192 @@ def chart_layout(fig: go.Figure, x_title: str, y_title: str) -> go.Figure:
 
 
 def page_overview() -> None:
-    st.title("Credit Risk PD Model")
-    st.markdown(
-        "An end-to-end Probability of Default (PD) project on loan-level data: data quality, "
-        "SQL analysis, an interpretable logistic regression, hold-out validation, illustrative "
-        "risk grades and monitoring. This dashboard only **shows** results that the pipeline "
-        "has already produced (D-029)."
-    )
-    st.warning(DISCLAIMER)
-    st.markdown(
-        "Validation is **out-of-sample, not out-of-time**: `year` is 2019 for every loan, so a "
-        f"stratified {1 - config.TEST_SIZE:.0%}/{config.TEST_SIZE:.0%} split on `Status` is used "
-        "(D-004, D-013)."
-    )
+    st.title(dashboard.page_title("overview"))
+    st.caption(text.PAGES["overview"]["subtitle"])
+    steps = dashboard.overview_pipeline(table)
+    for column, step in zip(st.columns(len(steps)), steps):
+        with column.container(border=True):
+            st.markdown(f"{step.icon} **{step.label}**")
+            st.markdown(f"#### {step.value}")
+            st.caption(step.note)
 
-    st.subheader("Data quality (Stage 2)")
-    show(table("dq_summary.csv"))
-    st.markdown("Missing values in the raw file, with the default rate when missing and when present:")
-    show(table("dq_missingness.csv"), decimals=4)
+    main, side = st.columns([2, 1], gap="large")
+    with main:
+        chart("overview", "hero", charts.auc_comparison(table("model_cv_metrics.csv")))
+    with side:
+        st.subheader(text.KEY_FINDINGS)
+        for column, finding in grid(dashboard.overview_findings(table)):
+            with column.container(border=True):
+                st.markdown(f"**{finding.title}**  \n{finding.text}")
 
-    st.subheader("Development / hold-out split (Stage 4, D-013, D-020)")
-    show(table("sql_split_summary.csv"), percent=("share_loans", "default_rate"))
-
-    st.subheader("Model scope (D-026)")
-    st.markdown(f"Loans with `credit_type = {config.EQUI_LEVEL}` are outside the main model's scope.")
-    show(table("validation_scope.csv"), percent=("observed_rate",))
+    caveat("overview")
+    with st.container(border=True):
+        st.markdown(f"**{text.MODEL_CARD_TITLE}**\n\n" + "\n".join(
+            f"- **{name}:** {line}" for name, line in text.MODEL_CARD.items()))
+    with details("data quality"):
+        show(table("dq_summary.csv"))
+        show(table("dq_missingness.csv"))
+    with details("development / hold-out split"):
+        show(table("sql_split_summary.csv"))
+    with details("model scope"):
+        show(table("validation_scope.csv"))
+    footer("overview")
 
 
 def page_leakage() -> None:
-    st.title("Leakage finding")
-    st.error(
-        "Several fields are missing (almost) only when the loan defaulted, and "
-        f"`credit_type = {config.EQUI_LEVEL}` is almost always a default. This most likely reflects "
-        "how the dataset was assembled rather than borrower risk; the cause is unknown (D-017). "
-        "These fields are therefore **excluded from the main model** (D-011, D-017)."
-    )
-
-    st.subheader("Default rate when a field is missing vs present (Stage 4)")
-    show(table("sql_dq_missingness.csv"),
-         percent=("share_missing", "default_rate_if_missing", "default_rate_if_present"))
-    figure("leakage_indicators")
-
-    st.subheader("Leakage demonstration (D-024)")
-    extra = ", ".join(f"`{f}`" for f in config.LEAKAGE_DEMO_EXTRA_FEATURES)
-    st.markdown(
-        "Two models built **only** to show the leakage. The full model uses the main features plus "
-        f"the fields excluded under D-017 and `term` / `co-applicant_credit_type` (D-022): {extra}. "
-        "The ablation uses only *whether* each leakage field is missing (plus `credit_type`). Both "
-        f"are scored with {config.CV_FOLDS}-fold CV on the development sample. They are never used "
-        "on the hold-out, for grades, monitoring or scoring in this dashboard."
-    )
-    cv = table("model_cv_metrics.csv")
-    show(cv[cv["fold"].astype(str) == "mean"].drop(columns="fold"))
-    st.caption(
-        "The leakage models use all development rows, EQUI included; the main model uses in-scope "
-        "development rows only (D-026), so the populations differ (D-024)."
-    )
-    figure("leakage_demo_auc")
-    with st.expander("Per-fold CV results"):
-        show(cv)
-
-    st.subheader("Fields excluded from the main model")
-    excluded = pd.DataFrame(config.EXCLUDED_FROM_MAIN_MODEL.items(), columns=["field", "reason"])
-    show(excluded)
+    main, side = page_start("leakage")
+    with main:
+        overall = float(table("dq_summary.csv").set_index("check").loc["default_rate", "value"])
+        chart("leakage", "indicators", charts.leakage_indicators(dashboard.leakage_chart_rows(table), overall))
+    with side:
+        side_panel("leakage")
+        side_notes("leakage")
+    with details("default rate when a field is missing vs present"):
+        show(table("sql_dq_missingness.csv"))
+    with details("leakage-demonstration cross-validation by fold"):
+        show(table("model_cv_metrics.csv"))
+    with details("fields excluded from the main model"):
+        show(pd.DataFrame(config.EXCLUDED_FROM_MAIN_MODEL.items(), columns=["field", "reason"]))
+    footer("leakage")
 
 
 def page_model() -> None:
-    st.title("Main model")
-    st.markdown(
-        "An unpenalised logistic regression (D-012) fitted on in-scope development loans only "
-        f"(`credit_type` ≠ {config.EQUI_LEVEL}, D-026). Preprocessing is inside a scikit-learn "
-        "Pipeline: log + standardise the two amounts, a missing indicator for income, and one-hot "
-        "categoricals with the most frequent level as reference (D-023)."
-    )
-    st.markdown("**Features (D-022):** " + ", ".join(f"`{f}`" for f in config.MAIN_MODEL_FEATURES))
-
-    st.subheader("Coefficients (Stage 5)")
-    show(table("model_coefficients.csv"), percent=("cv_sign_share",))
-    st.info(
-        "**`loan_amount` sign (D-023).** On its own a larger loan goes with a *lower* default rate, "
-        "because larger loans go to higher-income borrowers. With income in the model, its "
-        "coefficient is positive: for the same income, a larger loan means higher leverage. It is "
-        "kept, and the table still flags the mismatch with the expected sign."
-    )
-    figure("model_coefficients")
-
-    st.subheader("Feature screening (D-022)")
-    show(table("model_screening.csv"))
-
-    st.subheader("`lpsm` sensitivity (D-022)")
-    sensitivity = table("model_sensitivity.csv")
-    show(sensitivity[sensitivity["fold"].astype(str) == "mean"].drop(columns="fold"))
-    dropped = ", ".join(f"`{f}`" for f in config.SENSITIVITY_DROPPED_FEATURES)
-    st.caption(
-        f"Development-only {config.CV_FOLDS}-fold CV without {dropped}, on the same folds and rows; "
-        "reported only and never acted on (D-022). Whether the `lpsm` effect is separate from the "
-        "extraction pattern cannot be tested (D-017)."
-    )
+    main, side = page_start("model")
+    with main:
+        chart("model", "coefficients", charts.coefficients(table("model_coefficients.csv")))
+        st.caption(text.LOAN_AMOUNT_CAPTION)
+    with side:
+        side_panel("model")
+        st.markdown(f"**{text.MODEL_FIELDS_TITLE}**\n\n" + "\n".join(
+            f"- {config.VARIABLE_LABELS.get(f, f)}" for f in config.MAIN_MODEL_FEATURES))
+        side_notes("model")
+    with details("coefficients"):
+        show(table("model_coefficients.csv"))
+    with details("feature screening"):
+        show(table("model_screening.csv"))
+    with details("cross-validation without " + ", ".join(config.SENSITIVITY_DROPPED_FEATURES)):
+        show(table("model_sensitivity.csv"))
+    footer("model")
 
 
 def page_validation() -> None:
-    st.title("Validation (Stage 6)")
-    st.markdown(
-        "The frozen model scores the in-scope hold-out. The criteria were fixed before the "
-        "hold-out was scored (D-025). After the D-026 scope change, the hold-out was looked at a "
-        "second time, so its figures are no longer a fully unbiased estimate."
-    )
-
-    st.subheader("Discrimination")
-    show(table("validation_metrics.csv"))
-    st.markdown("Bootstrap confidence intervals on the hold-out:")
-    show(table("validation_confidence_intervals.csv"))
-
-    st.subheader("Pre-set criteria (D-025, heuristic thresholds)")
-    criteria = table("validation_criteria.csv")
-    criteria["rule"] = criteria["criterion"].map(dashboard.criterion_rules())
-    show(with_lights(criteria, ("status",)))
-
-    st.subheader("Calibration by PD decile (hold-out)")
+    main, side = page_start("validation")
     deciles = table("validation_calibration_deciles.csv")
-    top = max(deciles["mean_pd"].max(), deciles["observed_rate"].max())
-    fig = go.Figure([
-        go.Scatter(x=[0, top], y=[0, top], mode="lines", name="perfect calibration",
-                   line=dict(color=config.COLOR_INK_MUTED, dash="dash")),
-        go.Scatter(x=deciles["mean_pd"], y=deciles["observed_rate"], mode="markers+lines",
-                   name="PD decile", marker=dict(color=config.COLOR_PRIMARY, size=9),
-                   customdata=deciles[["bin", "n_loans"]],
-                   hovertemplate="decile %{customdata[0]}<br>mean PD %{x:.1%}<br>"
-                                 "observed %{y:.1%}<br>%{customdata[1]:,} loans<extra></extra>"),
-    ])
-    fig.update_xaxes(tickformat=".0%")
-    fig.update_yaxes(tickformat=".0%")
-    st.plotly_chart(chart_layout(fig, "mean PD", "observed default rate"))
-    show(deciles, percent=("mean_pd", "observed_rate", "gap"))
-    show(table("validation_calibration.csv"), percent=("mean_pd", "observed_rate"))
-    st.caption(
-        "Hosmer-Lemeshow (`hl_p_value`) is reported without a pass/fail judgement: with tens of "
-        "thousands of loans it rejects even trivial misfit (D-025)."
-    )
-
-    st.subheader("By segment (hold-out)")
-    show(table("validation_segments.csv"), percent=("mean_pd", "observed_rate", "gap"))
-    st.subheader("Coefficient stability (diagnostic refit on the hold-out, never used for scoring)")
-    show(table("validation_coefficient_stability.csv"))
+    with main:
+        calibration_tab, misses_tab = st.tabs([text.TAB_LABELS["calibration"], text.TAB_LABELS["misses"]])
+        with calibration_tab:
+            chart("validation", "calibration", charts.calibration(deciles))
+        with misses_tab:
+            view = st.segmented_control(text.MISS_SELECTOR, list(config.MISS_VIEWS),
+                                        format_func=lambda v: config.MISS_VIEWS[v][0],
+                                        default=next(iter(config.MISS_VIEWS)), required=True,
+                                        key="miss_view")
+            if config.MISS_VIEWS[view][1] == "deciles":
+                fig = charts.feature_deciles(table("validation_feature_deciles.csv"), view)
+            else:
+                fig = charts.segments(table("validation_segments.csv"), view)
+            chart("validation", "misses", fig)
+    with side:
+        side_panel("validation")
+        side_notes("validation")
+    with details("confidence intervals"):
+        show(table("validation_confidence_intervals.csv"))
+    with details("pre-set criteria"):
+        criteria = table("validation_criteria.csv")
+        criteria["rule"] = criteria["criterion"].map(dashboard.criterion_rules())
+        show(criteria)
+    with details("calibration"):
+        show(deciles)
+        show(table("validation_calibration.csv"))
+        st.caption(text.HOSMER_LEMESHOW_CAPTION)
+    with details("by feature decile and segment"):
+        show(table("validation_feature_deciles.csv"))
+        show(table("validation_segments.csv"))
+    with details("coefficient stability (diagnostic refit on the hold-out, never used for scoring)"):
+        show(table("validation_coefficient_stability.csv"))
+    footer("validation")
 
 
 def page_grades() -> None:
-    st.title("Illustrative risk grades (Stage 7)")
+    main, side = page_start("grades")
     scale = table("grades_scale.csv")
-    n_loans = int(scale["n_loans"].sum())
-    st.markdown(
-        "Equal-count PD bins merged until each grade defaults significantly more than the one "
-        f"below and holds at least {grades.min_grade_loans(n_loans):,} loans (the floor of "
-        f"{config.GRADE_MIN_SHARE:.0%} × {n_loans:,} loans; D-014, D-027). Built from in-scope "
-        "development loans only; no hold-out outcome is used. The grade PD is the mean model PD "
-        "of the grade."
-    )
-    fig = go.Figure([
-        go.Bar(x=scale["grade"], y=scale["grade_pd"], name="grade PD", marker_color=config.COLOR_PRIMARY),
-        go.Bar(x=scale["grade"], y=scale["observed_rate"], name="observed default rate",
-               marker_color=config.COLOR_SECONDARY),
-    ])
-    fig.update_yaxes(tickformat=".0%")
-    st.plotly_chart(chart_layout(fig, "grade", "rate (development)"))
-    show(scale.drop(columns=["grade_rank", "n_defaults", "mean_pd"], errors="ignore"),
-         percent=("pd_lower", "pd_upper", "grade_pd", "share", "observed_rate", "gap"))
-    st.info(
-        "**Sensitivity (D-027).** With the same rules, the number of grades depends on technical "
-        f"settings: {len(scale)} with the adopted settings, 7 with boundaries to 9 decimals, 10 "
-        "with 19 starting bins (`notebooks/04_risk_grades.ipynb` §2, where an `assert` checks the "
-        "counts; D-027). The pre-set settings were kept, so the exact number of grades is "
-        "documented as not robust. The shape is the same every time: one large grade A over the "
-        "flat lower half of PDs, then rising grades."
-    )
-
-    st.subheader("Pre-set checks")
-    show(with_lights(table("grades_checks.csv"), ("status",)))
-    st.subheader("Out-of-fold check (development)")
-    show(table("grades_oof_check.csv"), percent=("mean_pd", "observed_rate"))
+    with main:
+        label, help_text = text.GRADE_SLIDER
+        start = round(float(scale["grade_pd"].iloc[0]) * 100, 1)
+        pd_percent = st.slider(label, min_value=config.PD_MIN * 100, max_value=config.PD_MAX * 100, value=start,
+                               step=config.GRADE_SLIDER_STEP, format="%.1f%%", help=help_text, key="grade_pd")
+        selected = dashboard.grade_for_pd(pd_percent / 100, scale)
+        rates_column, shares_column = st.columns([3, 2])
+        with rates_column:
+            chart("grades", "rates", charts.grade_rates(scale, table("grades_oof_check.csv"), str(selected["grade"])))
+        with shares_column:
+            chart("grades", "shares", charts.grade_shares(scale, str(selected["grade"])))
+    with side:
+        side_panel("grades")
+        with st.container(border=True):
+            st.markdown(
+                f"**{text.SELECTED_GRADE}: {selected['grade']}**  \n"
+                f"PD from {dashboard.format_rate(selected['pd_lower'])} to "
+                f"{dashboard.format_rate(selected['pd_upper'])}  \n"
+                f"Grade PD {dashboard.format_rate(selected['grade_pd'])}  \n"
+                f"Observed {dashboard.format_rate(selected['observed_rate'])}"
+            )
+        side_notes("grades")
+    with details("grade scale"):
+        show(scale.drop(columns=["grade_rank", "n_defaults", "mean_pd"], errors="ignore"))
+    with details("pre-set checks"):
+        show(table("grades_checks.csv"))
+    with details("out-of-fold check (development)"):
+        show(table("grades_oof_check.csv"))
+    footer("grades")
 
 
 def page_monitoring() -> None:
-    st.title("Monitoring (Stage 8)")
-    st.warning(
-        "The development sample is the baseline, and the hold-out stands in for a \"next period\" "
-        "(inputs and scores only, no outcomes). Because the split is random, a PSI close to zero "
-        "is expected **by construction**: a green result shows that the monitoring works, but it "
-        "is **not evidence of stability over time** (D-028)."
-    )
-    green, amber = config.PSI_THRESHOLDS
-    st.markdown(f"PSI / CSI bands (heuristic): ≤ {green} green, ≤ {amber} amber, above that red.")
-
+    main, side = page_start("monitoring")
     psi = table("monitoring_psi.csv")
-    fig = go.Figure(go.Bar(x=psi["psi"], y=psi["variable"], orientation="h",
-                           marker_color=config.COLOR_PRIMARY, text=psi["psi"].map("{:.4f}".format),
-                           textposition="outside", name="PSI"))
-    for limit, label in ((green, "green limit"), (amber, "amber limit")):
-        fig.add_vline(x=limit, line_dash="dash", line_color=config.COLOR_INK_MUTED,
-                      annotation_text=f"{label} {limit}")
-    fig.update_xaxes(range=[0, dashboard.psi_axis_max(psi["psi"])])
-    st.plotly_chart(chart_layout(fig, "PSI (development vs hold-out)", ""))
-    show(with_lights(psi, ("light",)))
-
-    st.subheader("Bin shares by variable")
-    bins = table("monitoring_psi_bins.csv")
-    variable = st.selectbox("Variable", psi["variable"].tolist())
-    chosen = bins[bins["variable"] == variable].sort_values("bin_order")
-    fig = go.Figure([
-        go.Bar(x=chosen["bin_label"], y=chosen["share_baseline"], name="development (baseline)",
-               marker_color=config.COLOR_PRIMARY),
-        go.Bar(x=chosen["bin_label"], y=chosen["share_monitored"], name="hold-out (monitored)",
-               marker_color=config.COLOR_SECONDARY),
-    ])
-    fig.update_yaxes(tickformat=".0%")
-    st.plotly_chart(chart_layout(fig, "bin", "share of loans"))
-
-    st.subheader("Watch list (D-028)")
-    show(with_lights(table("monitoring_watch_list.csv"), ("light",)))
-    st.subheader("Characteristic analysis")
-    show(table("monitoring_characteristic.csv"))
-    st.subheader("Grade backtest (development outcomes only; a reference, not a judgement)")
-    st.caption(dashboard.backtest_light_rules())
-    show(with_lights(table("monitoring_grade_backtest.csv"), ("gap_light", "binomial_light")),
-         percent=("grade_pd", "observed_rate", "gap"))
-    st.subheader("Scope")
-    show(table("monitoring_scope.csv"), percent=("out_of_scope_share",))
-
-
-def page_score() -> None:
-    st.title("Score a loan")
-    if not dashboard.scoring_switched_on():  # off by default, so a public copy never scores (D-030)
-        st.info(dashboard_text.SCORING_OFF, icon=":material/block:")
-        st.caption(dashboard_text.SCORING_SWITCH_HINT)
-        return
-    st.warning(
-        "Illustrative only: this shows what the frozen model returns for one set of inputs. It is "
-        "not a credit decision (D-029)."
-    )
-    pipeline = frozen_model()
-    if pipeline is None:
-        st.info(
-            f"The fitted model ({config.MODEL_PATH.name}) is not available. It is not committed; "
-            "build it locally with `python -m src.model` (needs the raw data). All other pages work "
-            "without it."
-        )
-        return
-
-    try:
-        dashboard.check_model_coefficients(pipeline, table("model_coefficients.csv"))
-    except ValueError as err:
-        st.error(
-            "The local model does not match the committed in-scope model (`model_coefficients.csv`); "
-            f"rebuild it with `python -m src.model`. Not scoring. Details: {err}"
-        )
-        return
-
-    known = dashboard.model_levels(pipeline)
-    ranges = table("sql_model_input_ranges.csv")
-    bounds = ranges.set_index("variable")
-    q_lower, q_upper = (f"{q:.0%}" for q in config.INPUT_RANGE_QUANTILES)
-    levels_table = table("dq_categorical_levels.csv")
-    credit_levels = levels_table.loc[levels_table["column"] == config.CREDIT_TYPE_COL, "level"]
-
-    def range_help(variable: str) -> str:
-        b = bounds.loc[variable]
-        return (f"In-scope development loans: {q_lower} to {q_upper} quantile {b['lower']:,.0f} to "
-                f"{b['upper']:,.0f}; starts at the median (D-029).")
-
-    with st.form("score"):
-        credit_type = st.selectbox(
-            "credit_type (scope check only, not a model feature)", credit_levels.tolist())
-        loan_amount = st.number_input("loan_amount", min_value=0.0, value=float(bounds.loc["loan_amount", "median"]),
-                                      help=range_help("loan_amount"))
-        no_income = st.checkbox("Income not provided (scored as missing, D-023)")
-        income = st.number_input("income", min_value=0.0,
-                                 value=float(bounds.loc[config.INCOME_CLEAN_COL, "median"]),
-                                 help=range_help(config.INCOME_CLEAN_COL))
-        levels = {
-            col: st.selectbox(col, known[col], index=known[col].index(config.REFERENCE_LEVELS[col]))
-            for col in config.CATEGORICAL_FEATURES
-        }
-        submitted = st.form_submit_button("Score")
-
-    if not submitted:
-        return
-    try:
-        loan = dashboard.build_loan_frame(loan_amount, None if no_income else income, levels,
-                                          credit_type, known)
-    except ValueError as err:
-        st.error(str(err))
-        return
-
-    pd_value = float(holdout.score(pipeline, loan).iloc[0])
-    flagged = dashboard.out_of_range(loan_amount, None if no_income else income, ranges)
-    if flagged:
-        details = "; ".join(f"`{v}` outside {lo:,.0f} to {hi:,.0f}" for v, (lo, hi) in flagged.items())
-        st.warning(
-            f"**Extrapolation:** {details} (the {q_lower} to {q_upper} quantiles of in-scope development "
-            "loans). The model has little data here, so this PD is less reliable (D-029)."
-        )
-    grade = dashboard.grade_for_pd(pd_value, table("grades_scale.csv"))
-    left, mid, right = st.columns(3)
-    left.metric("Model PD", f"{pd_value:.2%}")
-    mid.metric("Illustrative grade", grade["grade"])
-    right.metric("Grade PD", f"{grade['grade_pd']:.2%}")
-    st.caption(f"Grade {grade['grade']} covers PDs from {grade['pd_lower']:.2%} to {grade['pd_upper']:.2%}; "
-               f"its observed development default rate is {grade['observed_rate']:.1%} (D-027).")
+    with main:
+        psi_tab, bins_tab = st.tabs([text.TAB_LABELS["psi"], text.TAB_LABELS["bins"]])
+        with psi_tab:
+            chart("monitoring", "psi", charts.psi(psi))
+        with bins_tab:
+            variable = st.selectbox(text.BIN_SELECTOR, psi["variable"].tolist(), key="bin_variable",
+                                    format_func=lambda v: config.VARIABLE_LABELS.get(v, v))
+            chart("monitoring", "bins", charts.bin_shares(table("monitoring_psi_bins.csv"), variable))
+    with side:
+        side_panel("monitoring")
+        light = dashboard.largest_psi(psi)["light"]
+        st.badge(light, icon=config.LIGHT_BADGE_ICONS[light], color=config.LIGHT_BADGE_COLORS[light])
+        side_notes("monitoring")
+    with details("PSI by variable"):
+        show(psi)
+    with details("watch list"):
+        show(table("monitoring_watch_list.csv"))
+    with details("characteristic analysis"):
+        show(table("monitoring_characteristic.csv"))
+    with details("grade backtest (development outcomes only; a reference, not a judgement)"):
+        st.caption(dashboard.backtest_light_rules())
+        show(table("monitoring_grade_backtest.csv"))
+    with details("scope"):
+        show(table("monitoring_scope.csv"))
+    footer("monitoring")
 
 
 PAGES = {
-    "Overview": page_overview,
-    "Leakage finding": page_leakage,
-    "Model": page_model,
-    "Validation": page_validation,
-    "Risk grades": page_grades,
-    "Monitoring": page_monitoring,
-    "Score a loan": page_score,
+    "overview": page_overview,
+    "leakage": page_leakage,
+    "model": page_model,
+    "validation": page_validation,
+    "grades": page_grades,
+    "monitoring": page_monitoring,
 }
+PAGE_BY_NAME = {name: key for key, name in config.DASHBOARD_PAGES.items()}
 
-choice = st.sidebar.radio("Page", list(PAGES))
-st.sidebar.caption(DISCLAIMER)
+st.sidebar.subheader(text.SIDEBAR_TITLE)
+choice = st.sidebar.radio("Page", list(config.DASHBOARD_PAGES.values()), key=PAGE_KEY,
+                          label_visibility="collapsed")
+st.sidebar.caption(text.DISCLAIMER)
 missing = dashboard.missing_artifacts()
 if missing:
     st.error(f"Missing artifacts: {', '.join(missing)}. Rebuild them with the stage runners.")
 else:
-    PAGES[choice]()
+    PAGES[PAGE_BY_NAME[choice]]()

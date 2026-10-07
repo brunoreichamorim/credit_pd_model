@@ -560,30 +560,37 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
   - **Scale check:** the dashboard checks `grades_scale.csv` whenever it loads it: the scale must run from 0 to 1 with no gaps or overlaps, rising boundaries and unique labels.
   - **Tests:** the original 1.5 case is restored, next to -0.1 and NaN. A reconciliation test confirms the dashboard and Stage 7 give the same grade at every published boundary and just below it. Rebuilding Stages 2 to 8 left every committed table unchanged.
 - **Tests (`tests/test_dashboard.py`):** the loader and scoring guards on synthetic data; every committed table has the columns the dashboard uses; every page renders without an error (Streamlit `AppTest`); and, if the model is present, an in-scope loan is scored into a published grade while an EQUI loan is refused.
-- **Later change:** the scoring page is off by default and runs only locally when switched on; see D-030.
+- **Later change:** the scoring page was removed; see D-030.
 
 ### D-030 Dashboard presentation and public-copy rules
 - **Type:** MODELLING CHOICE
-- **Status:** Agreed (Bruno, 2026-10-06, before the presentation polish)
-- **Issue:** with the D-029 rule alone, the scoring page runs wherever `artifacts/pd_model.joblib` exists. A public copy of the dashboard would score loans if the binary ever reached it. A public form that returns a PD and a grade for any loan can be read as a credit decision, which this learning project is not.
-- **Options considered:**
-  - (a) off by default, switched on locally with an environment variable;
-  - (b) a constant in `src/config.py`, so switching on means editing code;
-  - (c) keep relying on the model file being absent.
-- **Decision (a):** the scoring page runs only when **all three** hold:
-  1. the environment variable `config.SCORING_ENV_VAR` (`PD_DASHBOARD_SCORING`) equals `config.SCORING_ENV_ON` (`on`), checked by `dashboard.scoring_switched_on`;
-  2. the model file exists;
-  3. its coefficients match the committed `model_coefficients.csv` (D-029).
-  - Otherwise the page shows no form. It explains why scoring is off (`src/dashboard_text.py`) and how to switch it on locally (README §11).
-  - The D-029 scoring guards are unchanged.
-- **Why:** off by default means a public copy cannot score, even if the binary is committed or uploaded by mistake. Option (c) fails exactly in that case; option (b) mixes a deployment setting into the code.
-- **Tests (`tests/test_dashboard.py`):**
-  - the switch is off unless set to exactly `on`;
-  - with the switch off, the page has no form even when the model is present;
-  - with the switch on, a missing model or one whose coefficients differ from the committed table is refused;
-  - every page renders with the switch on and off;
-  - the scoring-form tests run with the switch on.
-
+- **Status:** Agreed (Bruno, 2026-10-06 and 2026-10-07)
+- **Issue:** a public copy of the dashboard should not be readable as a credit-decision tool, and the Stage 9 version read as a series of CSV tables with long paragraphs that repeated this log.
+- **Loan scoring removed (Bruno, 2026-10-07):** the dashboard has no loan-scoring page. It loads no model and only shows the committed tables.
+  - **History:** the first answer (2026-10-06, commit `bb92314`) kept the D-029 scoring page but switched it off by default, behind an environment variable. It was replaced by removal the next day.
+  - **Why:** a public form that returns a PD and a grade for any loan can be read as a credit decision, which this learning project is not. A switch is a control that can be misconfigured; removal leaves nothing to switch on. The model card keeps the line "Not for: credit decisions".
+  - **What stays:** `sql/model_input_ranges.sql` still writes `sql_model_input_ranges.csv` (D-029), but the dashboard no longer reads it. The grade lookup (`dashboard.grade_for_pd`, D-027) stays for the grade slider.
+- **Presentation rules:** the dashboard shows the data with short plain-language explanations and links to this log for the reasoning, instead of repeating it.
+  - **Layout (Bruno chose layout B, 2026-10-07):** six numbered pages (`config.DASHBOARD_PAGES`), sized for a 1920×1080 screen with the browser maximised so that each page's title, chart and side panel fit above the fold; narrower windows only need to stay usable. Each page has a title and a one-line subtitle, one prominent chart in two thirds of the width whose title's help says how to read it, and a side panel with the headline tiles in a 2-column grid (short labels under one panel caption, each with a short glossary text as hover help) and the page's caveat. Charts use readable field names (`config.VARIABLE_LABELS`, `config.COEFFICIENT_LABELS`). Detail tables are in expanders with plain column labels. Each page ends with links to its decision-log entries and a "Next" button.
+  - **Overview:** a one-row pipeline strip (one number per stage), a hero chart of the main model's CV AUC next to the two leakage-demonstration models (D-024), four key findings in a 2×2 grid, the EQUI caveat and a short model card. The model card's limitations state that the model has no loan-to-value or debt-to-income information, excluded under D-017, which likely limits its ranking power. (A toggle to hide the leakage models was tried and removed: the chart alone makes the point.)
+  - **Interactivity:** a "Where the model misses" selector on the Validation page, a grade slider ("Try a PD") on the Risk grades page and a bin-shares selector on the Monitoring page. All are lookups or filters on committed tables; none computes a new number.
+  - **Caveats kept on the page:** only those that change how a result is read: the leakage cause is unknown (D-017, a warning box); the hold-out was evaluated twice and the validation is out-of-sample, not out-of-time (D-004, D-025, D-026); PSI is near zero by construction (D-028); the grades are illustrative (D-014, D-027); EQUI is outside the model's scope (D-026).
+  - **Numbers:** every number comes from a committed CSV or from `src/config.py`. No result is typed into the text (`src/dashboard_text.py`); the key findings are templates filled with CSV values.
+  - **Links:** each page links its decision-log entries on GitHub's `main` branch (`config.REPO_URL`, `config.DOCS_GIT_REF`). The links resolve once this work is merged into `main`.
+- **Theme (deliberate choice, Bruno, 2026-10-07):** a fixed dark theme (`.streamlit/config.toml`, mirrored by `config.DASHBOARD_THEME`).
+  - Only documented values of the dark column of the chart guidelines' reference palette are used. At most two series appear together, always slots 1 and 2 (`config.DASHBOARD_COLORS`), which the palette documents as validated against every pair on the dark surface `#1a1a19`. The app background is set to exactly that surface. Reference lines and de-emphasised marks use the palette's muted ink.
+  - **Validator not re-run:** the palette validator is a JavaScript script, and no JavaScript runtime is installed here. Bruno chose to rely on the documented values instead of installing one. Traffic lights stay an icon with a word, never colour alone.
+  - The README figures and their matplotlib colours (`config.COLOR_*`) are unchanged and stay light.
+- **Figures:** the dashboard shows no PNG; its charts are drawn with Plotly from the CSVs (`src/dashboard_charts.py`).
+  - Figure 05 is redrawn from `sql_dq_missingness.csv` (the six missing-value fields) and `dq_categorical_levels.csv` (the EQUI default rate, without an "otherwise" bar). `income = 0` is not shown, because no committed table holds it; a caption says so. Bruno chose this over adding a new SQL table.
+  - Figure 05 is drawn as a dot plot: per field, the default rate when missing and when present.
+  - Figure 07 is redrawn from `model_coefficients.csv`, with readable names.
+  - Figure 08 is not shown: the Data leakage tiles carry its numbers.
+  - Figure 11 is redrawn from `validation_feature_deciles.csv` in the Validation tab "Where the model misses", next to the `loan_purpose` / `loan_type` segments (`validation_segments.csv`). Both are D-025 pre-set checks, so showing them adds no look at the hold-out. Other segments (fields the model does not use) would need new hold-out statistics and are not shown.
+  - Figure 12 is redrawn from `grades_scale.csv` and `grades_oof_check.csv` (pooled rows) as two charts: grade PD, observed in-sample and out-of-fold rates, and the share of loans per grade. The grade slider marks the selected grade with a band.
+  - The Monitoring chart shows each variable's observed PSI next to the PSI expected with no shift (`monitoring_psi.csv`); the axis fits the data, so a red PSI is never cut off, and the heuristic limits are stated in the chart help.
+  - This supersedes D-029's "three existing README figures".
+- **Tests (`tests/test_dashboard.py`):** six pages and no scoring page; each page follows the layout (title, subtitle, chart help, panel caption, tiles equal `page_tiles`, caveat, no snake_case column header, no image, links); tile, pipeline, finding and chart values equal the CSV values; the slider and selectors change the charts as expected; every charted field has a readable name; the charts use only the configured colours; `config.toml` equals `config.DASHBOARD_THEME`; every linked decision exists; GitHub's anchor rule on known headings; the text module types no result number.
 ---
 
 ## Future enhancements (explicitly out of scope for the one-week MVP)

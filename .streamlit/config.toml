@@ -1,0 +1,13 @@
+# Fixed dark theme (D-030), built only from documented dark values of the dataviz reference
+# palette. Mirrors config.DASHBOARD_THEME and config.DASHBOARD_SIDEBAR_BACKGROUND in
+# src/config.py; tests/test_dashboard.py checks that the two agree.
+[theme]
+base = "dark"
+backgroundColor = "#1a1a19"
+secondaryBackgroundColor = "#2c2c2a"
+textColor = "#ffffff"
+primaryColor = "#3987e5"
+chartCategoricalColors = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
+
+[theme.sidebar]
+backgroundColor = "#0d0d0d"

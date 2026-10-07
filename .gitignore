@@ -24,6 +24,7 @@ __pycache__/
 venv/
 .env
 .env.*
+.streamlit/secrets.toml
 
 # --- Jupyter
 .ipynb_checkpoints/

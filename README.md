@@ -239,34 +239,29 @@ python -m src.monitoring    # needs pd_grades from Stage 7 (python -m src.grades
 ![PSI by variable and grade shares, development vs hold-out](reports/figures/13_monitoring_psi.png)
 
 ## 11. Dashboard
-**Stage 9** (`app.py`, helpers in `src/dashboard.py`, decision [D-029](docs/decision_log.md)):
+**Stage 9** (`app.py`; helpers in `src/dashboard.py`, charts in `src/dashboard_charts.py`, text in `src/dashboard_text.py`; decisions [D-029 and D-030](docs/decision_log.md)):
 
 ```bash
-streamlit run app.py    # reads the committed artifacts/*.csv; no data or model rebuild needed
+streamlit run app.py    # reads the committed artifacts/*.csv; no data, model or rebuild needed
 ```
 
-The dashboard is **read-only**. It shows the tables and figures that Stages 2 to 8 already produced, and never refits a model or computes a new metric, apart from the single-loan PD on the Score page.
+The dashboard is **read-only**. It shows the tables that Stages 2 to 8 already produced, and never refits a model, loads a model or computes a new metric.
+
+Each page has one prominent chart (its "?" says how to read it) next to a side panel with the headline tiles (glossary help on hover) and the one caveat that changes how its results are read. Detail tables are in expanders, and each page ends with links to its decision-log entries.
 
 | Page | Shows |
 |---|---|
-| Overview | scope and disclaimer, data-quality summary, development / hold-out split, model scope (EQUI excluded) |
-| Leakage finding | default rate when a field is missing vs present, the leakage-demonstration CV results (D-024), and every excluded field with its reason |
-| Model | the 6 features, coefficients with expected signs (including the `loan_amount` note, D-023) and feature screening |
-| Validation | hold-out AUC, Gini, KS and Brier with confidence intervals, the D-025 traffic lights, calibration by PD decile, segments |
-| Risk grades | the A–H scale, grade PD vs observed rate, the pre-set checks and the D-027 sensitivity note |
-| Monitoring | PSI / CSI by variable with the heuristic 0.10 / 0.25 bands (D-028), bin shares, the watch list and the development backtest |
-| Score a loan | PD and illustrative grade for one set of inputs, from the frozen in-scope model |
+| 1. Overview | a pipeline strip with one number per stage, the main model's CV AUC next to the two leakage-demonstration models, key findings, the model card |
+| 2. Data leakage | default rate when a field is missing vs present (figure 05, redrawn as a dot plot) and the CV AUC of the main and leakage-demonstration models (D-024) |
+| 3. Model | what raises and lowers the PD (the coefficients, figure 07, redrawn with readable names) |
+| 4. Validation | hold-out AUC, Gini, KS, Brier, mean PD vs observed rate, the pre-set criteria; calibration by PD decile, and "where the model misses": by loan amount or income decile (figure 11) and by loan purpose or type |
+| 5. Risk grades | grade PD, observed in-sample and out-of-fold rates, and the share of loans per grade (figure 12, redrawn), with a slider that shows which illustrative grade a PD falls in |
+| 6. Monitoring | each variable's PSI next to the PSI expected with no shift (D-028), and the bin shares of a chosen variable |
 
-**Score a loan is off by default** (D-030), so a public copy of the dashboard never scores: the page explains why and shows no form. It works only locally, when all three hold: the environment variable `PD_DASHBOARD_SCORING` is `on`, `artifacts/pd_model.joblib` exists, and its coefficients match the committed `model_coefficients.csv`. The model file is gitignored; build it with `python -m src.model` (this needs the raw data). To switch scoring on:
-
-```bash
-PD_DASHBOARD_SCORING=on streamlit run app.py         # macOS / Linux
-$env:PD_DASHBOARD_SCORING = "on"; streamlit run app.py   # Windows PowerShell
-```
-
-Without the switch or the file, every other page still works. EQUI loans are refused as out of scope (D-026), and only categorical levels the model was trained on can be chosen. If `loan_amount` or income is outside the 1st-99th percentile of in-scope development loans (a heuristic, D-029), the PD is shown with an amber extrapolation warning. The result is illustrative, not a credit decision.
-
-*Screenshots will be added.*
+![Overview](reports/figures/dashboard_overview.png)
+![Model](reports/figures/dashboard_model.png)
+![Validation](reports/figures/dashboard_validation.png)
+![Risk grades](reports/figures/dashboard_risk_grades.png)
 
 ## 12. Results
 *To be filled with actual results. No numbers are reported before they have been produced.*
