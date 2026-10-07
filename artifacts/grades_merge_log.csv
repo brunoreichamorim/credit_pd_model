@@ -1,0 +1,13 @@
+merge_step,n_bands_before,edge_removed,step_p_value,lower_band_rate,upper_band_rate,reason
+1,20,0.070591,0.91246,0.101285,0.092973,step not significant
+2,19,0.081759,0.852071,0.09713,0.091629,step not significant
+3,18,0.095556,0.661214,0.093871,0.091376,step not significant
+4,17,0.089408,0.753343,0.095296,0.092622,step not significant
+5,16,0.110698,0.623139,0.099506,0.097571,step not significant
+6,15,0.115799,0.389055,0.098534,0.100043,step not significant
+7,14,0.100709,0.386026,0.094226,0.095585,step not significant
+8,13,0.128021,0.267534,0.106875,0.110873,step not significant
+9,12,0.143572,0.2632,0.138722,0.143285,step not significant
+10,11,0.163718,0.104553,0.152971,0.162452,step not significant
+11,10,0.105591,0.066281,0.094453,0.099037,step not significant
+12,9,0.276959,0.0,0.266324,0.315981,band below minimum share

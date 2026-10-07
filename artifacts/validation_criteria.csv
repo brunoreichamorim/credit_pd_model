@@ -1,0 +1,5 @@
+criterion,value,status
+auc_drop_cv_minus_holdout,0.004339,green
+binomial_p,0.864498,green
+calibration_slope,1.007677,green
+max_decile_gap,0.024812,amber

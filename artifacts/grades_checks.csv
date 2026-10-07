@@ -1,0 +1,11 @@
+check,value,rule,status
+rates_increase_in_sample,True,must be True,pass
+rates_increase_out_of_fold_pooled,True,must be True,pass
+min_grade_loans,4670,>= 4669 (floor of 0.05 x loans),pass
+max_step_p_value,0.0034682697770037907,< 0.05,pass
+n_grades,8,<= 10,pass
+rates_increase_out_of_fold_fold_1,True,reported only,report
+rates_increase_out_of_fold_fold_2,True,reported only,report
+rates_increase_out_of_fold_fold_3,True,reported only,report
+rates_increase_out_of_fold_fold_4,True,reported only,report
+rates_increase_out_of_fold_fold_5,True,reported only,report

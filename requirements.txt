@@ -1,0 +1,24 @@
+# Python 3.11. Versions pinned to what the project was developed and tested with.
+
+# Data handling and storage
+pandas==3.0.6
+numpy==2.4.6
+pyarrow==25.0.1          # Parquet read/write
+
+# SQL layer
+duckdb==1.5.5            # in-process SQL engine, no database server
+
+# Modelling and statistics
+scikit-learn==1.9.1      # Pipeline, ColumnTransformer, LogisticRegression, metrics
+statsmodels==0.15.0      # coefficient standard errors / p-values for interpretation
+scipy==1.17.1
+
+# Visualisation and dashboard
+matplotlib==3.11.2       # static figures in notebooks and README
+plotly==7.1.0            # interactive charts in the dashboard
+streamlit==1.64.0
+
+# Notebooks and testing
+jupyter==1.1.1
+ipykernel==7.3.0
+pytest==9.1.1

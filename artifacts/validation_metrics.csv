@@ -1,0 +1,4 @@
+population,n_loans,auc,gini,ks,brier
+development_in_sample,93391.0,0.674884,0.349768,0.271824,0.12298
+holdout_in_scope,39981.0,0.670266,0.340532,0.266746,0.122205
+cv_mean_development,,0.674605,0.349211,0.273218,0.123015

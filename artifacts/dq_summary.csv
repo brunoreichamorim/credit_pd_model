@@ -1,0 +1,13 @@
+check,value
+n_rows,148670
+n_columns,34
+schema_matches_expected,True
+id_missing,0
+id_unique,True
+duplicate_rows,0
+duplicate_rows_ignoring_id,0
+status_0,112031
+status_1,36639
+status_missing,0
+default_rate,0.246445
+year_values,2019: 148670
