@@ -60,14 +60,14 @@ These are the model's known weak points from validation and grading.
 
 | Priority | KPI | Why | Baseline (development) | Trigger |
 |---|---|---|---|---|
-| 1 | Share of loans in the top development `loan_amount` decile bin, and in the top `income_clean` decile bin | D-023: the model under-predicts the top deciles by about 3.5 pp. More such loans means more under-prediction in the portfolio. | 10.1% and 9.4% | > 15% amber, > 20% red |
+| 1 | Share of loans in the top development `loan_amount` decile bin, and in the top `income_clean` decile bin | D-023: the model under-predicts the top deciles by 3.4 pp and 3.5 pp. More such loans means more under-prediction in the portfolio. | 10.1% and 9.4% | > 15% amber, > 20% red |
 | 1 | *Once outcomes exist:* observed minus predicted default rate in those top deciles | D-023 | hold-out: +3.4 pp and +3.5 pp (Stage 6) | > 5 pp red (the D-025 amber limit) |
 | 2 | Change in grade A's share | D-027: 45% of loans sit in one grade, where the model cannot rank risk. A larger grade A means less differentiation. | 45.0% | change > 5 pp amber, > 10 pp red |
 | 2 | *Once outcomes exist:* grade A's observed rate against its grade PD (9.5%) | D-027 | development 9.6% | gap > 2 pp amber, > 5 pp red |
 | 3 | Out-of-scope (EQUI) share of all loans | D-026: these loans get no PD. A rising share means a growing unscored part of the portfolio. | 10.26% | > 15% amber, > 20% red |
 | 4 | Share of `lump_sum_payment = lpsm` | D-023: 1.65% of loans, close to the 1% rare-level rule | 1.65% | < 1% amber |
 | 4 | Loans with a categorical level unseen in development | D-023: the encoder rejects unseen levels, so such loans cannot be scored | 0 | > 0 red |
-| 5 | `income_clean` missing share | D-023: 7.1% missing, imputed with a missing-value indicator | 7.1% | covered by the CSI `<missing>` bin |
+| 5 | `income_clean` missing share | D-023: 7.0% missing, imputed with a missing-value indicator | 7.0% | covered by the CSI `<missing>` bin |
 
 ## 6. Actions
 

@@ -153,6 +153,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Why:** It outputs a probability directly. Each coefficient is readable as a change in log-odds, so its direction can be checked against credit intuition. It is stable, easy to validate and well established for PD modelling. A challenger model is optional and only comes after the baseline is complete.
 - **Implementation (Stage 5):** `src/model.py` fits an **unpenalised** logistic regression (`LogisticRegression(C=np.inf)`, scikit-learn's documented way to fit without a penalty), so the coefficients are plain maximum-likelihood estimates rather than shrunk ones, and match a `statsmodels.Logit` fit on the same design matrix (`coefficient_table`, both used for cross-checking). `class_weight` is left at its default, so predicted probabilities stay calibrated to the development sample's 24.64% default rate, rather than being rebalanced.
 - **Note after D-026:** the model is now fitted on in-scope development loans only, so its probabilities are calibrated to their 16.03% default rate.
+- **Note (Stage 10 review):** the two estimates agree closely but not exactly (`artifacts/model_coefficients.csv`; largest gap 0.021 for `loan_purpose_p2`, about 0.4 standard errors), most likely because lbfgs stops at its default tolerance; the reported coefficients are sklearn's, while the standard errors and p-values belong to the statsmodels fit. No refit.
 
 ### D-013 Stratified 70/30 split with 5-fold cross-validation and a fixed seed
 - **Type:** MODELLING CHOICE
@@ -343,7 +344,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Decision:** two models, both scored with 5-fold CV on the development sample only, **never** on the hold-out, for risk grades, monitoring or the dashboard:
   - **Full model:** the 6 main-model features plus every D-017-excluded field in its clean version where one exists (`rate_of_interest_clean`, `Interest_rate_spread`, `Upfront_charges`, `property_value_clean`, `LTV_clean`, `dtir1`, `credit_type`, `age`, `submission_of_application`), plus `term` and `co-applicant_credit_type` (D-022). It is built on the main model's own preprocessing, so the two stay comparable. The missingness stays visible: each extra numeric field gets a missing-value indicator next to its median-imputed value, and each extra categorical field keeps missing as its own level. Uses the default L2-penalised logistic regression: with near-perfect separation, an unpenalised fit does not converge.
   - **Ablation:** only whether each of `rate_of_interest_clean`, `Interest_rate_spread`, `Upfront_charges`, `property_value_clean`, `dtir1`, `age` is missing, plus `credit_type` (`submission_of_application` is missing on exactly the same rows as `age`, so it is left out to avoid a duplicate indicator).
-- **Stage 5 evidence (FACT; `artifacts/model_cv_metrics.csv`):** mean CV AUC -- main model 0.651 (all development rows; 0.675 in scope after D-026), full leakage model **1.000**, indicators-only ablation **1.000**. The ablation shows that missingness alone is enough for a perfect score: `Interest_rate_spread` is missing if and only if `Status = 1` (D-017), so its indicator by itself separates the target. The apparent skill therefore comes from the missingness pattern, which most likely reflects how the dataset was assembled; the cause is unknown (D-017).
+- **Stage 5 evidence (FACT; `artifacts/model_cv_metrics.csv`):** mean CV AUC -- main model 0.651 (all development rows, in the Stage 5 run before D-026; no longer in the current `model_cv_metrics.csv`, which holds the in-scope 0.675), full leakage model **1.000**, indicators-only ablation **1.000**. The ablation shows that missingness alone is enough for a perfect score: `Interest_rate_spread` is missing if and only if `Status = 1` (D-017), so its indicator by itself separates the target. The apparent skill therefore comes from the missingness pattern, which most likely reflects how the dataset was assembled; the cause is unknown (D-017).
 - **Correction during Stage 5 review:** a first version of the full model median-imputed the extra fields without missing indicators, which hid the very signal it was meant to demonstrate (it scored 0.858, below the ablation). It was fixed before commit.
 - **Why:** this shows concretely, on this project's own data, how a model that ignored D-017 would look almost perfect from the missingness pattern alone, a pattern whose cause is unknown (D-017), without evidence that it captures borrower risk -- the central caution of the project (see README limitations).
 
@@ -381,7 +382,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
     - AUC drop 0.004: green.
     - Binomial test: green.
     - Slope: green.
-    - Largest PD-decile gap 2.5 pp, in decile 1 (mean PD 6.8%, observed 9.2%): amber. Decile 9 is next at 2.3 pp.
+    - Largest PD-decile gap 2.5 pp, in decile 1 (mean PD 6.7%, observed 9.2%): amber. Decile 9 is next at 2.3 pp.
   - **Hosmer-Lemeshow** rejects (statistic 88 on 8 df), as expected at this sample size. Not used for a judgement.
   - **Segments:** AUC 0.64 to 0.69. The largest gap is `loan_purpose = p2` (857 loans), under-predicted by 4.3 pp. Every other level is within 1 pp.
   - **Diagnostic coefficient refit:**
@@ -531,7 +532,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
     No χ² p-value is below 0.05 (smallest 0.09, `income_clean`). This is the expected result for a random split. It is a sanity check, not evidence of stability.
   - **Watch list, all green:**
     - top `loan_amount` decile bin: 10.1% development, 9.8% hold-out;
-    - top `income_clean` decile bin: 9.4% and 9.3% (7.1% of incomes are missing and sit in their own bin);
+    - top `income_clean` decile bin: 9.4% and 9.3% (7.0% of incomes are missing and sit in their own bin);
     - grade A: 45.0% and 44.9%;
     - out-of-scope (EQUI) share: 10.26% and 10.36%;
     - `lpsm`: 1.65% and 1.70%;

@@ -133,7 +133,7 @@ Segments with fewer than 10 loans are left out of the segment tables, so no comm
 
 **Verified facts (Stage 4):**
 - Development sample: 104,069 loans, 24.644% default rate. Hold-out sample: 44,601 loans, 24.645%.
-- Outside EQUI, the default rate falls from 30.3% in the lowest `income_clean` decile to 10.9–12.2% in the top three, and from 24.1% in the lowest `loan_amount` decile to 12.2% in the ninth (15.4% in the tenth).
+- Outside EQUI, the default rate falls from 30.3% in the lowest `income_clean` decile to 11.0–12.1% in the top three, and from 24.0% in the lowest `loan_amount` decile to 12.2% in the ninth (15.4% in the tenth).
 - For `loan_type = type2`, the amount-weighted default rate is 32.0%, against a count-based 34.5%. The smaller type2 loans default more often.
 
 ## 7. PD model
@@ -151,7 +151,7 @@ Fitted only on the development sample (D-013), and only on loans inside the mode
 |---|---:|---|
 | `income_clean` | -0.415 | higher income -> lower PD |
 | `lump_sum_payment = lpsm` | +2.490 | balloon payment -> higher PD |
-| `Neg_ammortization = neg_amm` | +1.172 | negative amortisation -> higher PD |
+| `Neg_ammortization = neg_amm` | +1.171 | negative amortisation -> higher PD |
 | `loan_type = type2` (business/commercial) | +0.606 | higher PD |
 | `loan_purpose = p2` | +0.361 | higher PD |
 | `loan_amount` | +0.117 | see note below |
