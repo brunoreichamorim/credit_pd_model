@@ -402,6 +402,7 @@ DASHBOARD_PAGE_DECISIONS = {
 REPO_URL = "https://github.com/brunoreichamorim/credit_pd_model"
 DOCS_GIT_REF = "main"
 DECISION_LOG_PATH = PROJECT_ROOT / "docs" / "decision_log.md"
+README_PATH = PROJECT_ROOT / "README.md"  # its section 12 numbers are checked by tests/test_readme.py
 # Model names as written in model_cv_metrics.csv / model_sensitivity.csv (src/model.py).
 CV_MODEL_MAIN = "main"
 CV_MODEL_LEAKAGE_FULL = "leakage_full"

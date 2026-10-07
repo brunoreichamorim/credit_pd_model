@@ -2,23 +2,28 @@
 
 An end-to-end **Probability of Default (PD)** modelling project on loan-level data. It covers data quality, SQL analysis, an interpretable logistic regression, statistical validation, calibration, illustrative risk grades, monitoring and a Streamlit dashboard.
 
-> **Disclaimer.** This is an educational portfolio project. It is **not** an official bank credit-scoring system, does **not** represent an underwriting decision and makes **no** claim of regulatory compliance. The risk grades are *illustrative internal risk grades for this project*.
+> **Disclaimer.** This is an educational learning project. It is **not** an official bank credit-scoring system, does **not** represent an underwriting decision and makes **no** claim of regulatory compliance. The risk grades are *illustrative internal risk grades for this project*.
 
-**Status:** 🚧 in development. See the [roadmap](#roadmap).
+**Status:** ✅ complete (Stages 1–10). See the [roadmap](#roadmap).
 
 ---
 
 ## 1. Project objective
-*To be completed in Stage 10.*
-
 The goal is to show the full credit-risk modelling process, not just to maximise predictive accuracy. That means data-quality reasoning, leakage-free preprocessing, interpretable modelling, honest validation (discrimination **and** calibration), and monitoring after development.
 
 ## 2. Business context
-*To be completed in Stage 10.*
+A Probability of Default (PD) model estimates how likely a borrower is to default. In a bank, a PD typically feeds:
+- **approval:** cut-offs that decide which applications are accepted, declined or referred;
+- **pricing:** risk-based interest rates and fees, so that expected losses are covered;
+- **provisions:** expected-credit-loss provisions, where the PD is one input next to loss given default and exposure;
+- **capital:** regulatory capital, where a bank uses internal models for it;
+- **portfolio steering:** risk grades, limits and monitoring.
+
+This project follows the same steps, but its PD is **not** fit for any of these uses, and it makes no claim of regulatory compliance. The definition of default behind `Status` is undocumented, so the PDs are meaningful only relative to this dataset and are not a regulatory 12-month PD ([D-015](docs/decision_log.md)). The main model also lacks the core mortgage risk drivers (see [section 13](#13-limitations)).
 
 ## 3. Dataset
 - **Source:** Yasser H., *Loan Default Dataset*, Kaggle: <https://www.kaggle.com/datasets/yasserh/loan-default-dataset>
-- **Size:** about 148,670 loans × 34 columns. Target is `Status` (1 = default, 0 = non-default).
+- **Size:** 148,670 loans × 34 columns. Target is `Status` (1 = default, 0 = non-default).
 - **The raw data is not included in this repository** (see [decision D-002](docs/decision_log.md)). To reproduce the project, download `Loan_Default.csv` from Kaggle and place it at:
 
 ```
@@ -78,7 +83,6 @@ That leaves 16 candidate features. A full-feature model is built only as a clear
 - Differences in default rate between category levels remain after the EQUI records are set aside, for example `loan_type` from 14.4% to 25.8%.
 
 ## 5. Methodology
-*To be completed.*
 
 ```
 Raw CSV → data-quality checks & cleaning → Parquet → DuckDB / SQL → model dataset
@@ -89,6 +93,19 @@ Raw CSV → data-quality checks & cleaning → Parquet → DuckDB / SQL → mode
 ```
 
 **Sampling design (decision [D-013](docs/decision_log.md)):** 70% development/training set, with 5-fold cross-validation performed only within the development/training set, and a 30% final hold-out test set used once by design for final evaluation. It was evaluated a second time after the D-026 scope change (see D-025 and section 8), so the hold-out figures are not fully unbiased. This is out-of-sample, not out-of-time, validation.
+
+**Pipeline walk-through** (all decisions in [`docs/decision_log.md`](docs/decision_log.md)):
+1. **Cleaning (Stage 2):** schema checks, then rule-based `_clean` columns next to the raw ones. No row is deleted (D-004 to D-010).
+2. **Leakage investigation (Stage 3):** missing values of several fields almost perfectly separate `Status`. Those fields are excluded from the main model, and the cause is unknown (D-011, D-017; also D-016, D-018, D-019).
+3. **DuckDB and the stored split (Stage 4):** the processed data is loaded into DuckDB, and the 70/30 split is made once and stored, so every later stage uses the same samples (D-020, D-013, D-021).
+4. **Model scope:** loans with `credit_type = EQUI` (99.99% default) are outside the model's population (D-026).
+5. **Feature screening (Stage 5):** two candidates are dropped for cause, the rest are screened by Information Value outside EQUI, and 6 features remain (D-022).
+6. **Preprocessing and model:** imputation, a missing-income indicator, log transforms, scaling and one-hot encoding, all inside a scikit-learn Pipeline, then an unpenalised logistic regression with 5-fold CV on development data (D-023, D-012).
+7. **Leakage demonstration:** a separate, clearly labelled model shows how the excluded fields would make a model look almost perfect (D-024).
+8. **Validation (Stage 6):** the frozen model scores the hold-out against criteria set beforehand (D-025).
+9. **Illustrative risk grades (Stage 7):** equal-count PD bins merged until every step is significant, built on development data only (D-014, D-027).
+10. **Monitoring (Stage 8):** PSI of the score, the grades and the features against frozen development bins, plus a watch list (D-028).
+11. **Dashboard (Stage 9):** a read-only view of the committed result tables (D-029, D-030).
 
 ## 6. SQL layer
 **Stage 4** (`src/db.py`, queries in [`sql/`](sql/)):
@@ -128,7 +145,7 @@ python -m src.model    # needs the DuckDB database from Stage 4 (python -m src.d
 
 Fitted only on the development sample (D-013), and only on loans inside the model's scope: loans with `credit_type = EQUI` (99.99% default) are left out of the model's population, but not deleted from the data (decision D-026, made after the first Stage 6 look). That leaves 93,391 development loans with a 16.0% default rate. The model uses 5-fold stratified cross-validation. All preprocessing (imputation, scaling, one-hot encoding) is fitted inside a scikit-learn Pipeline, on training folds only.
 
-**Feature screening (decision D-022).** Of the 16 D-017 candidates, `term` and `co-applicant_credit_type` are dropped for cause -- `term`'s only real signal is an unexplained cell (`term = 300` with `Neg_ammortization`, 579 loans defaulting at 91.4% outside EQUI), and `co-applicant_credit_type` is a proxy for `credit_type = EQUI` whose effect direction reverses once EQUI is excluded. The remaining 10 candidates are screened by Information Value (outside EQUI); 6 pass:
+**Feature screening (decision D-022).** Of the 16 D-017 candidates, `term` and `co-applicant_credit_type` are dropped for cause -- `term`'s only real signal is an unexplained cell (`term = 300` with `Neg_ammortization`, 579 loans defaulting at 91.4% outside EQUI), and `co-applicant_credit_type` is a proxy for `credit_type = EQUI` whose effect direction reverses once EQUI is excluded. The remaining 14 candidates are screened by Information Value (outside EQUI); 6 pass:
 
 | Feature | Coefficient | Direction |
 |---|---:|---|
@@ -166,7 +183,7 @@ The model was therefore refitted outside EQUI and the hold-out evaluated again (
 - AUC 0.670 (95% bootstrap interval 0.662 to 0.678), Gini 0.341, KS 0.267, Brier 0.122. The cross-validation AUC was 0.675.
 - Mean PD is 16.0% against an observed 15.9%, with a calibration slope of 1.01.
 - Of the four pre-set criteria, three are green. One is amber: the largest gap between predicted and observed default rate in a PD decile is 2.5 pp (limit for green: 2 pp).
-- The model under-predicts for the largest loans and the highest incomes, each top decile by about 3.5 pp. Both gaps are inside the amber limit, and they are accepted as a documented limitation (D-023).
+- The model under-predicts for the largest loans and the highest incomes, by 3.4 pp and 3.5 pp in the top decile. Both gaps are inside the amber limit, and they are accepted as a documented limitation (D-023).
 - Coefficients refitted on the hold-out, as a diagnostic only, keep their sign for 9 of 10 terms. The exception, `loan_purpose = p4`, is not significant in either sample.
 ![ROC curve and KS on the in-scope hold-out](reports/figures/09_roc_ks.png)
 
@@ -264,19 +281,48 @@ Each page has one prominent chart (its "?" says how to read it) next to a side p
 ![Risk grades](reports/figures/dashboard_risk_grades.png)
 
 ## 12. Results
-*To be filled with actual results. No numbers are reported before they have been produced.*
+Headline numbers, each rounded from a committed table in `artifacts/`. The hold-out was evaluated twice (before and after the D-026 refit), so its figures are not a fully unbiased estimate (D-025). The validation is out-of-sample, not out-of-time (D-004).
+
+| Measure | Value | Source |
+|---|---|---|
+| Loans | 148,670 | `dq_summary.csv` |
+| Default rate, all loans | 24.64% | `dq_summary.csv` |
+| Development / hold-out loans | 104,069 / 44,601 | `sql_split_summary.csv` |
+| In-scope loans, development / hold-out | 93,391 / 39,981 | `validation_scope.csv` |
+| In-scope default rate, development / hold-out | 16.03% / 15.94% | `validation_scope.csv` |
+| Features in the main model | 6 of 16 candidates | `model_screening.csv` |
+| CV AUC / Gini / KS / Brier (in-scope development) | 0.675 / 0.349 / 0.273 / 0.123 | `model_cv_metrics.csv` |
+| CV AUC, leakage demonstration: full / indicators only | 1.000 / 1.000 | `model_cv_metrics.csv` |
+| CV AUC without `lump_sum_payment` (reported only) | 0.650 | `model_sensitivity.csv` |
+| Hold-out AUC (95% bootstrap interval) | 0.670 (0.662 to 0.678) | `validation_confidence_intervals.csv` |
+| Hold-out Gini / KS / Brier | 0.341 / 0.267 / 0.122 | `validation_metrics.csv` |
+| Hold-out mean PD vs observed default rate | 15.97% vs 15.94% | `validation_calibration.csv` |
+| Hold-out calibration slope | 1.008 | `validation_calibration.csv` |
+| Pre-set validation criteria | 3 green, 1 amber (largest PD-decile gap 2.5 pp) | `validation_criteria.csv` |
+| Illustrative risk grades / share of loans in grade A | 8 / 45.0% | `grades_checks.csv`, `grades_scale.csv` |
+| Largest PSI, development vs hold-out (all green) | 0.0006 | `monitoring_psi.csv` |
+
+`tests/test_readme.py` checks every value in this table against its source table.
 
 ## 13. Limitations
-*To be completed.* Known so far:
 - The default definition behind `Status` is undocumented (D-015).
 - `year` is 2019 for every loan, so the dataset has no genuine time dimension and true out-of-time validation is not possible (D-004).
 - Several variables are missing almost only for defaulted loans, and are excluded from the main model (D-011, D-017). This includes LTV and debt-to-income, the core mortgage risk drivers. The main model is therefore a prototype built on data that failed its fitness-for-use check. In a real bank, the data would be sent back to its owner for remediation.
 - `Credit_Score` carries no ranking power in this dataset (D-019).
 - The model covers only loans outside `credit_type = EQUI` (D-026). It says nothing about EQUI loans, which all defaulted.
 - The hold-out was evaluated twice, before and after the D-026 refit, so the hold-out results are not a fully unbiased estimate (D-025).
-- The model under-predicts in the top `loan_amount` and `income_clean` deciles by about 3.5 pp, and for `loan_purpose = p2` by 4.3 pp (D-023, D-025).
+- The model under-predicts in the top `loan_amount` and `income_clean` deciles by 3.4 pp and 3.5 pp, and for `loan_purpose = p2` by 4.3 pp (D-023, D-025).
+- The model leans on `lump_sum_payment = lpsm`, whose separation from the extraction pattern cannot be tested: without it, the CV AUC falls from 0.675 to 0.650 (D-017, D-022).
+- The feature screen used the whole development sample, so the CV metrics are slightly optimistic (D-022).
 - The model does not separate risk among the lowest-PD half of loans, so the best illustrative grade holds 45% of loans. The number of grades (8) depends on technical settings of the grading rule (D-027).
 - Monitoring cannot detect drift: the data has no time dimension and the hold-out is a random sample of the same population, so the near-zero PSI is a sanity check, not evidence of stability. Per-grade backtesting needs outcomes from a new period (D-028).
+
+**Next steps**
+- Confirm the definition of default behind `Status` with the data source (D-015).
+- Obtain LTV and debt-to-income without the outcome-driven missingness, and redevelop the model with them (D-017).
+- Run an out-of-time validation and a real per-grade backtest once loans from a later period exist (D-004, D-028).
+- Build a WoE-based scorecard version and a challenger model, such as gradient boosting, and compare them with the logistic baseline.
+- Add simulated stress and drift scenarios to the monitoring.
 
 ## 14. Technologies
 Python 3.11 · pandas · DuckDB (SQL) · scikit-learn · statsmodels · matplotlib · Plotly · Streamlit · pytest
@@ -293,11 +339,19 @@ python3.11 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-python -m src.data_processing    # needs data/raw/Loan_Default.csv
-python -m src.db                 # builds the DuckDB database and sql_*.csv tables
+python -m src.data_processing    # Stage 2: needs data/raw/Loan_Default.csv
+python -m src.db                 # Stage 4: DuckDB database and sql_*.csv tables
+python -m src.model              # Stage 5: fits the model; model_*.csv tables
+python -m src.holdout            # Stage 6: scores the hold-out; validation_*.csv tables
+python -m src.grades             # Stage 7: illustrative grade scale; grades_*.csv tables
+python -m src.monitoring         # Stage 8: monitoring run; monitoring_*.csv tables
+streamlit run app.py             # Stage 9: dashboard over the committed result tables
+
 pytest                           # tests on the raw file are skipped if it is absent
-streamlit run app.py             # dashboard over the committed result tables
 ```
+
+## Licence
+The code is released under the [MIT License](LICENSE). The licence covers the code only: the dataset is not included in this repository. Its Kaggle page states "CC0: Public Domain", but the original source and its licence cannot be confirmed (D-002).
 
 ## Project structure
 
@@ -305,13 +359,15 @@ streamlit run app.py             # dashboard over the committed result tables
 credit_pd_model/
 ├── data/raw/            # Loan_Default.csv (placed manually, gitignored)
 ├── data/processed/      # cleaned Parquet + DuckDB database (generated, gitignored)
-├── sql/                 # data quality, portfolio analysis, risk segmentation, model dataset
-├── src/                 # config, data processing, db, model, validation, scoring, monitoring
+├── .streamlit/          # dashboard theme (config.toml)
+├── sql/                 # data quality, portfolio analysis, model dataset, validation, grades, monitoring
+├── src/                 # config, data processing, eda, db, model, validation, holdout, grades, monitoring, dashboard
 ├── notebooks/           # 01 EDA · 02 model training · 03 validation · 04 risk grades · 05 monitoring
 ├── tests/               # pytest checks
 ├── artifacts/           # data-quality tables (dq_*.csv), metrics, result tables (model binary gitignored)
 ├── reports/figures/     # figures used in this README
 ├── docs/decision_log.md # every decision, with its type and rationale
+├── docs/monitoring_plan.md # monitoring metrics, thresholds and actions
 └── app.py               # Streamlit dashboard
 ```
 
@@ -328,4 +384,4 @@ credit_pd_model/
 | 7 | Illustrative risk grades | ✅ |
 | 8 | Monitoring (PSI / stability) | ✅ |
 | 9 | Streamlit dashboard | ✅ |
-| 10 | Final documentation | ⏳ |
+| 10 | Final documentation | ✅ |

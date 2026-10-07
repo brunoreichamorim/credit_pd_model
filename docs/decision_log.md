@@ -31,10 +31,18 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Stage 2 evidence:** `src/data_processing.validate_schema` and `tests/test_data_processing.py` confirm 148,670 rows, 34 columns and exactly the column names and order in `config.EXPECTED_RAW_COLUMNS`. The verified file has SHA-256 `4234b122f463ff4d563de600ade5ec347a9ab8f02cfc204535f7c0d4929bfe70`.
 
 ### D-002 The raw data is not committed to Git
-- **Type:** ASSUMPTION
-- **Status:** Agreed (Stage 1)
-- **Decision:** `data/raw/`, `data/processed/`, `*.csv`, `*.parquet` and `*.duckdb` are gitignored. Users download the file themselves and place it at `data/raw/Loan_Default.csv`.
-- **Why:** We assume the licence does not clearly permit redistribution. Committing only code keeps the public repository safe either way. If the licence is later confirmed to allow redistribution, this can be revisited.
+- **Type:** MODELLING CHOICE. The licence is recorded from the Kaggle page; code cannot verify it (as for the source in D-001).
+- **Status:** Agreed (Stage 1; reason updated in Stage 10, Bruno, 2026-10-07)
+- **Decision:** `data/raw/`, `data/processed/`, `*.csv`, `*.parquet` and `*.duckdb` are gitignored (the aggregate `artifacts/*.csv` tables excepted). Users download the file themselves and place it at `data/raw/Loan_Default.csv`.
+- **Original reason (Stage 1, ASSUMPTION, replaced in Stage 10):** we assumed the licence did not clearly permit redistribution.
+- **Update (Stage 10):** the Kaggle dataset page states the licence as "CC0: Public Domain" (checked by Bruno on 2026-10-07).
+  - **Caveat:** the uploader's description says the data was "referred from Kaggle", so the original source and its licence cannot be confirmed. The CC0 label is what this Kaggle page states, not a verified licence of the original data.
+  - The original assumption is therefore replaced rather than settled: the stated licence would permit redistribution, but its provenance is unverified.
+- **The decision stands.** The data stays out of Git, for these reasons:
+  - the 28.5 MB CSV would stay in the repository history permanently;
+  - the project rule is that data files and row-level borrower records are never committed (`CLAUDE.md`);
+  - Kaggle remains the single source, and D-001's SHA-256 pins the exact file the results were built from.
+- **Not changed:** the repository's `LICENSE` covers the code only, not the dataset.
 
 ### D-003 `ID` is excluded from modelling
 - **Type:** MODELLING CHOICE (uniqueness is FACT)
@@ -144,6 +152,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Status:** Agreed (Stage 5)
 - **Why:** It outputs a probability directly. Each coefficient is readable as a change in log-odds, so its direction can be checked against credit intuition. It is stable, easy to validate and well established for PD modelling. A challenger model is optional and only comes after the baseline is complete.
 - **Implementation (Stage 5):** `src/model.py` fits an **unpenalised** logistic regression (`LogisticRegression(C=np.inf)`, scikit-learn's documented way to fit without a penalty), so the coefficients are plain maximum-likelihood estimates rather than shrunk ones, and match a `statsmodels.Logit` fit on the same design matrix (`coefficient_table`, both used for cross-checking). `class_weight` is left at its default, so predicted probabilities stay calibrated to the development sample's 24.64% default rate, rather than being rebalanced.
+- **Note after D-026:** the model is now fitted on in-scope development loans only, so its probabilities are calibrated to their 16.03% default rate.
 
 ### D-013 Stratified 70/30 split with 5-fold cross-validation and a fixed seed
 - **Type:** MODELLING CHOICE
@@ -163,7 +172,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 ### D-015 The definition of `Status` (default) is undocumented
 - **Type:** ASSUMPTION
 - **Status:** Agreed; documented as a limitation
-- **Decision:** `Status = 1` is treated as "default" as labelled. No default definition has been found in the dataset description yet; this must be confirmed against the original Kaggle dataset documentation before treating the target definition as established.
+- **Decision:** `Status = 1` is treated as "default" as labelled. The Kaggle dataset description was checked on 2026-10-07 (Bruno). It describes `Status` as whether the borrower defaulted, but gives no definition: no days-past-due threshold and no observation horizon. The target definition therefore remains unconfirmed.
 - **Consequence:** The predicted PDs are meaningful **relative to this dataset only**. They are not comparable to a regulatory 12-month PD. The portfolio default rate of 24.64% is far above typical mortgage-portfolio levels, which reinforces this caveat.
 - **Stage 2 evidence (FACT):** `Status` is present in every row and takes only the values 0 (112,031 rows) and 1 (36,639 rows), a default rate of 24.64%. The data itself cannot establish what `Status = 1` means, so the definition remains unconfirmed.
 
@@ -231,7 +240,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 
 ### D-018 Categorical values are kept exactly as recorded
 - **Type:** MODELLING CHOICE (for Stage 2); the observations below are FACT
-- **Status:** Agreed for Stage 2; recoding or grouping categories is decided in Stage 3/5
+- **Status:** Agreed (Stage 2; redundant columns decided after Stage 3, below)
 - **Decision:** Stage 2 does not rename, merge, collapse or drop any category, and does not convert category labels into missing values.
 - **Stage 2 observations (FACT; full list in `artifacts/dq_categorical_levels.csv`):**
   - **Duplicated information:**
@@ -292,7 +301,7 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **`lump_sum_payment` is kept** despite being a partial EQUI proxy (34% of `lpsm` loans are EQUI, against 10% overall) -- see the D-017 update above.
 - **IV screen (outside EQUI):** kept -- `income_clean` 0.158, `lump_sum_payment` 0.137, `Neg_ammortization` 0.133, `loan_type` 0.070, `loan_amount` 0.061, `loan_purpose` 0.020. Screened out (all < 0.02) -- `Region` 0.019, `loan_limit` 0.014, `occupancy_type` 0.011, `approv_in_adv` 0.010, `total_units` 0.007, `Credit_Worthiness` 0.005, `interest_only` 0.001, `open_credit` 0.001.
 - **Result:** `config.MAIN_MODEL_FEATURES` (6): `income_clean`, `loan_amount`, `lump_sum_payment`, `Neg_ammortization`, `loan_type`, `loan_purpose`. `config.SCREENED_OUT_FEATURES` records the other 10, each with its reason. `tests/test_config.py` checks the two sets partition `MAIN_MODEL_CANDIDATE_FEATURES` exactly.
-- **Limitation of the screen (known, accepted):** the screen is computed once on the whole development sample, including the rows each CV fold later validates on; it is not repeated inside every fold. The CV metrics (D-023) are therefore slightly optimistic, most for borderline features such as `loan_purpose` (IV 0.0204 against the 0.02 cut-off). This follows common practice (screen on the development sample, validate on data the screen never saw): the Stage 6 hold-out played no part in screening and is the unbiased check.
+- **Limitation of the screen (known, accepted):** the screen is computed once on the whole development sample, including the rows each CV fold later validates on; it is not repeated inside every fold. The CV metrics (D-023) are therefore slightly optimistic, most for borderline features such as `loan_purpose` (IV 0.0204 against the 0.02 cut-off). This follows common practice (screen on the development sample, validate on data the screen never saw): the Stage 6 hold-out played no part in screening and is the out-of-sample check (evaluated twice, so not fully unbiased; D-025).
 - **`lpsm` sensitivity (MODELLING CHOICE, Agreed; Bruno, 2026-10-06; written before the comparison was run):**
   - The in-scope main model is refitted without `lump_sum_payment` (`config.SENSITIVITY_DROPPED_FEATURES`), with the same 5-fold CV on in-scope development loans (`src/model.sensitivity_without`, `artifacts/model_sensitivity.csv`). The hold-out is not used.
   - It answers one question: how much of the model's discrimination rests on this single feature, whose separation from the extraction pattern cannot be tested (D-017).
@@ -593,9 +602,9 @@ Findings from the earlier, pre-project investigation are treated as **To verify*
 - **Tests (`tests/test_dashboard.py`):** six pages and no scoring page; each page follows the layout (title, subtitle, chart help, panel caption, tiles equal `page_tiles`, caveat, no snake_case column header, no image, links); tile, pipeline, finding and chart values equal the CSV values; the slider and selectors change the charts as expected; every charted field has a readable name; the charts use only the configured colours; `config.toml` equals `config.DASHBOARD_THEME`; every linked decision exists; GitHub's anchor rule on known headings; the text module types no result number.
 ---
 
-## Future enhancements (explicitly out of scope for the one-week MVP)
+## Future enhancements (out of scope for this project)
 
-- Weight of Evidence (WoE) binning and Information Value (IV) analysis; a WoE-based scorecard version of the model.
+- Weight of Evidence (WoE) binning and a WoE-based scorecard version of the model (Information Value is already used for screening, D-022).
 - A challenger model (for example gradient boosting) compared against the logistic baseline.
-- Simulated stress / drift scenarios for monitoring. The MVP covers basic PSI / stability analysis only.
+- Simulated stress / drift scenarios for monitoring. Stage 8 covers basic PSI / stability analysis only.
 - Out-of-time validation, if a dataset with real temporal variation becomes available.

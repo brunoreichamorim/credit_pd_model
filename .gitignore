@@ -1,4 +1,4 @@
-# --- Data (licence does not clearly permit redistribution; see docs/decision_log.md D-002)
+# --- Data (never committed; see docs/decision_log.md D-002)
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
